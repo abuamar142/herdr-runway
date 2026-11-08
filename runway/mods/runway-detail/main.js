@@ -637,7 +637,10 @@ export default class AgentUsageDetail extends View {
         const input = InputState.new({ placeholder: item.placeholder });
         input.set_masked(true);
         input.on("submit", (_event, cx) => this.saveKey(item.id, cx));
-        input.on("change", (_event, cx) => cx.notify());
+        input.on("change", (_event, cx) => {
+          delete this.testResult[item.id];
+          cx.notify();
+        });
         this.keyInputs[item.id] = input;
         this.keyVisible[item.id] = false;
       }
@@ -806,6 +809,7 @@ export default class AgentUsageDetail extends View {
         delete data[id];
         await writeKeys(data, current);
         this.savedKeys.delete(id);
+        delete this.testResult[id];
         this.keyInputs[id].replace("");
         this.keyInputs[id].set_masked(true);
         this.keyVisible[id] = false;
