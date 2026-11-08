@@ -617,75 +617,88 @@ export default class AgentUsage extends View {
     setShared(BUSY_KEY, true);
     cx.notify();
     cx.spawn(async (cx) => {
-      const enabled = enabledSet();
-      const active = sources().filter((source) => {
-        if (!source.multiple && enabled && !enabled.has(source.id)) return false;
-        return !onlySourceIds || onlySourceIds.includes(source.id);
-      });
-      const byId = new Map(providers().map((provider) => [provider.id, provider]));
-      const results = await Promise.all(
-        active.map(async (source) => {
-          try {
-            return await this.readSourceWithTimeout(source, cx);
-          } catch (error) {
-            return failed(
-              source,
-              "The usage helper failed.",
-              "reader_error",
-              "Run the helper by hand to see the error it printed.",
-              error?.message ?? error,
-            );
+      try {
+        const enabled = enabledSet();
+        const active = sources().filter((source) => {
+          if (!source.multiple && enabled && !enabled.has(source.id)) return false;
+          return !onlySourceIds || onlySourceIds.includes(source.id);
+        });
+        const byId = new Map(providers().map((provider) => [provider.id, provider]));
+        const results = await Promise.all(
+          active.map(async (source) => {
+            try {
+              return await this.readSourceWithTimeout(source, cx);
+            } catch (error) {
+              return failed(
+                source,
+                "The usage helper failed.",
+                "reader_error",
+                "Run the helper by hand to see the error it printed.",
+                error?.message ?? error,
+              );
+            }
+          }),
+        );
+        active.forEach((source, index) => {
+          this.lastSourceRefresh.set(source.id, Date.now());
+          const result = results[index];
+          if (!result) return;
+          const records = Array.isArray(result) ? result : [result];
+          for (const record of records) byId.set(record.id, record);
+        });
+        // Keep disabled providers in the snapshot so Providers can turn them
+        // back on; a provider that has never been read gets a harmless placeholder.
+        const known = knownProviders();
+        const knownIds = new Set(known.map((provider) => provider.id));
+        for (const provider of known) {
+          if (!byId.has(provider.id)) {
+            byId.set(provider.id, {
+              id: provider.id,
+              name: provider.name,
+              plan: null,
+              windows: [],
+              money: null,
+              error: null,
+              code: null,
+              action: null,
+              failure: null,
+              source: null,
+              http_status: null,
+              base: provider.base ?? null,
+              account: provider.account ?? null,
+            });
           }
-        }),
-      );
-      active.forEach((source, index) => {
-        this.lastSourceRefresh.set(source.id, Date.now());
-        const result = results[index];
-        if (!result) return;
-        const records = Array.isArray(result) ? result : [result];
-        for (const record of records) byId.set(record.id, record);
-      });
-      // Keep disabled providers in the snapshot so Providers can turn them
-      // back on; a provider that has never been read gets a harmless placeholder.
-      const known = knownProviders();
-      const knownIds = new Set(known.map((provider) => provider.id));
-      for (const provider of known) {
-        if (!byId.has(provider.id)) {
-          byId.set(provider.id, {
-            id: provider.id,
-            name: provider.name,
-            plan: null,
-            windows: [],
-            money: null,
-            error: null,
-            code: null,
-            action: null,
-            failure: null,
-            source: null,
-            http_status: null,
-            base: provider.base ?? null,
-            account: provider.account ?? null,
-          });
+        }
+        for (const id of [...byId.keys()]) {
+          if (!knownIds.has(id)) byId.delete(id);
+        }
+        setShared(SNAPSHOT, { fetched_at: new Date().toISOString(), providers: [...byId.values()] });
+        try {
+          this.checkAlerts();
+        } catch (_) {
+          // A toast failure must not keep the bar busy.
+        }
+        try {
+          await this.recordHistory([...byId.values()]);
+        } catch (_) {
+          // A history failure must not keep the bar busy.
+        }
+        this.refreshCcusage(cx);
+      } catch (_) {
+        // Keep the previous snapshot; the finally below still clears busy.
+      } finally {
+        this.busy = false;
+        try {
+          setShared(BUSY_KEY, false);
+        } catch (_) {
+          // The view may be closing.
+        }
+        try {
+          cx.notify();
+        } catch (_) {
+          // The view may be closing.
         }
       }
-      for (const id of [...byId.keys()]) {
-        if (!knownIds.has(id)) byId.delete(id);
-      }
-      this.busy = false;
-      setShared(BUSY_KEY, false);
-      setShared(SNAPSHOT, { fetched_at: new Date().toISOString(), providers: [...byId.values()] });
-      try {
-        this.checkAlerts();
-      } catch (_) {
-        // A toast failure must not keep the bar busy.
-      }
-      try {
-        await this.recordHistory([...byId.values()]);
-      } catch (_) {
-        // A history failure must not keep the bar busy.
-      }
-      this.refreshCcusage(cx);
-      cx.notify();
     });
   }
 
