@@ -157,6 +157,16 @@ export default class AgentUsageDetail extends View {
         this.labelInputs[item.id] = label;
       }
     }
+    const ids = new Set(credentialInstances().map((item) => item.id));
+    for (const id of Object.keys(this.keyInputs)) {
+      if (!ids.has(id)) {
+        delete this.keyInputs[id];
+        delete this.labelInputs[id];
+        delete this.keyVisible[id];
+        delete this.testing[id];
+        delete this.testResult[id];
+      }
+    }
   }
 
   renameAccount(id, value, cx) {
@@ -229,6 +239,7 @@ export default class AgentUsageDetail extends View {
   }
 
   async loadHistory(cx) {
+    this.ensureInputs();
     let text = null;
     try {
       text = await readTextFile(historyFile());
@@ -249,6 +260,7 @@ export default class AgentUsageDetail extends View {
   }
 
   select(id, cx) {
+    this.ensureInputs();
     setShared(SELECTED_KEY, id);
     cx.notify();
   }
@@ -261,11 +273,13 @@ export default class AgentUsageDetail extends View {
   }
 
   toggleManaging(cx) {
+    this.ensureInputs();
     this.managing = !this.managing;
     cx.notify();
   }
 
   setSettingsTab(tab, cx) {
+    this.ensureInputs();
     this.settingsTab = tab;
     cx.notify();
   }

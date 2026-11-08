@@ -262,8 +262,10 @@ export default class AgentUsage extends View {
       live.add(provider.id);
       const perProvider =
         state[provider.id] && typeof state[provider.id] === "object" ? state[provider.id] : {};
+      const liveWindows = new Set();
       for (const meter of windows) {
         const key = String(meter?.key ?? meter?.label ?? "window");
+        liveWindows.add(key);
         const reset = typeof meter?.resets_at === "string" ? meter.resets_at : "";
         let entry =
           perProvider[key] && typeof perProvider[key] === "object"
@@ -316,6 +318,9 @@ export default class AgentUsage extends View {
         }
         perProvider[key] = entry;
       }
+      for (const key of Object.keys(perProvider)) {
+        if (!liveWindows.has(key)) delete perProvider[key];
+      }
       state[provider.id] = perProvider;
     }
     for (const id of Object.keys(state)) {
@@ -323,6 +328,17 @@ export default class AgentUsage extends View {
     }
     this.alertState = state;
     this.writeAlertState();
+  }
+
+  sameWindows(left, right) {
+    const a = left && typeof left === "object" ? left : {};
+    const b = right && typeof right === "object" ? right : {};
+    const keys = Object.keys(a).sort();
+    const other = Object.keys(b).sort();
+    return (
+      keys.length === other.length &&
+      keys.every((key, index) => key === other[index] && a[key] === b[key])
+    );
   }
 
   async recordHistory(records) {
@@ -368,7 +384,7 @@ export default class AgentUsage extends View {
       if (
         last &&
         now - Number(last.t) < 90000 &&
-        JSON.stringify(last.w) === JSON.stringify(point.w) &&
+        this.sameWindows(last.w, point.w) &&
         last.m === point.m
       ) {
         continue;
