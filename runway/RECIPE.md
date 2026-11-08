@@ -51,8 +51,8 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Footer: `Updated 4:30 PM · next in 4m` (or `manual refresh`) and a Refresh
   button with a 12px glyph that spins while busy.
 
-**Settings** replaces the body with three tabs: `Providers`, `Credentials`
-and `Refresh`.
+**Settings** replaces the body with four tabs: `Providers`, `Credentials`,
+`Refresh` and `Alerts`.
 
 - `Providers`, with one row per known provider: mark, name, plan, current
   reading, and a 34×20px switch. Off rows are dimmed.
@@ -91,6 +91,12 @@ and `Refresh`.
   OAuth login keeps using the Console endpoint, so its dollar figures stay.
 - Saving a key for a provider that is off writes the key but skips the read;
   the row says `Saved` and the provider stays hidden.
+- Alerts fire once per provider, window and threshold until that window resets.
+  A window that crosses 95% sends the critical toast only; the warn threshold
+  is marked as already sent. Forecast alerts fire once per window when the
+  current pace reaches 100% before reset. Reset alerts fire when `resets_at`
+  changes. Snooze mutes all Runway toasts for an hour; the alert state is kept
+  in the bar's `localStorage`, not shared state.
 - Auto refresh is 5 minutes by default and never below 5. Each provider can
   override it from the Providers tab: the interval chip cycles
   Auto/5/10/15/30/60 minutes, and Auto follows the global setting. Reads run
@@ -173,6 +179,7 @@ Shared state:
 - `runway.snapshot` — `{ fetched_at, providers[] }`
 - `runway.settings` — `{ refresh_minutes, manual_only, provider_minutes }`;
   `provider_minutes` is a map from provider id to minutes, absent means global.
+- `runway.alerts` — `{ enabled, warn, critical, forecast, reset, snooze_until }`.
 - `runway.busy` — boolean
 - `runway.detail.selected` — provider id
 - `runway.enabled` — array of provider ids; absent means all
@@ -282,5 +289,8 @@ a layout; the bar opens it with `openOverlay`.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
 - The interval chip on a provider row cycles Auto/5/10/15/30/60 and the choice
   survives a restart.
+- Alerts shows the four tabs and the Send test toast appears. Crossing a
+  threshold writes `warn`/`critical` into `data/runway/store.json` and does not
+  repeat on the next refresh.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.

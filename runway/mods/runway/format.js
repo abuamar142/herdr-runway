@@ -12,6 +12,7 @@ export function keysFile() {
 
 export const SNAPSHOT = "runway.snapshot";
 export const SETTINGS_KEY = "runway.settings";
+export const ALERTS_KEY = "runway.alerts";
 export const BUSY_KEY = "runway.busy";
 // The provider the dialog opens on; the bar writes it when a provider is clicked.
 export const SELECTED_KEY = "runway.detail.selected";
@@ -96,6 +97,44 @@ export function setProviderMinutes(id, minutes) {
     refresh_minutes: settings.minutes,
     manual_only: settings.manual,
     provider_minutes: next,
+  });
+}
+
+function clampPercent(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(1, Math.min(100, Math.round(number)));
+}
+
+export function alertsSettings() {
+  const value = shared(ALERTS_KEY);
+  const raw = value && typeof value === "object" ? value : {};
+  const warn = clampPercent(raw.warn, 80);
+  const critical = Math.max(warn, clampPercent(raw.critical, 95));
+  const snooze = Number(raw.snooze_until);
+  return {
+    enabled: raw.enabled !== false,
+    warn,
+    critical,
+    forecast: raw.forecast !== false,
+    reset: raw.reset !== false,
+    snoozeUntil: Number.isFinite(snooze) && snooze > 0 ? snooze : 0,
+  };
+}
+
+export function setAlertsSettings(patch) {
+  const current = alertsSettings();
+  const next = { ...current, ...(patch && typeof patch === "object" ? patch : {}) };
+  const warn = clampPercent(next.warn, current.warn);
+  const critical = Math.max(warn, clampPercent(next.critical, current.critical));
+  const snooze = Number(next.snoozeUntil);
+  setShared(ALERTS_KEY, {
+    enabled: next.enabled !== false,
+    warn,
+    critical,
+    forecast: next.forecast !== false,
+    reset: next.reset !== false,
+    snooze_until: Number.isFinite(snooze) && snooze > 0 ? Math.round(snooze) : 0,
   });
 }
 

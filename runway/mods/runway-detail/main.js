@@ -22,6 +22,7 @@ import {
 } from "herdr";
 import {
   SELECTED_KEY,
+  alertsSettings,
   barColor,
   clockTime,
   countdown,
@@ -39,6 +40,7 @@ import {
   providers,
   refreshSettings,
   selectedProvider,
+  setAlertsSettings,
   setProviderMinutes,
   setRefreshSettings,
   share,
@@ -541,6 +543,7 @@ export default class AgentUsageDetail extends View {
     const selected = pick(list);
     const current = list.find((provider) => provider.id === selected) ?? null;
     const settings = refreshSettings();
+    const alerts = alertsSettings();
     const fetched = snapshot()?.fetched_at;
     const busy = isBusy();
     const next = nextRefreshMs(settings, fetched);
@@ -787,12 +790,145 @@ export default class AgentUsageDetail extends View {
         .child(chip(t, "runway-refresh-manual", "Manual", settings.manual, pickRefresh(settings.minutes, true))),
     );
 
+    const alertsSection = (() => {
+      const snoozed = alerts.snoozeUntil > Date.now();
+      const rows = [
+        {
+          id: "enabled",
+          title: "Notifications",
+          hint: "Off stops every Runway toast.",
+          content: h_flex()
+            .gap(6)
+            .child(chip(t, "runway-alert-on", "On", alerts.enabled, (_event, cx) => {
+              setAlertsSettings({ enabled: true });
+              cx.notify();
+            }))
+            .child(chip(t, "runway-alert-off", "Off", !alerts.enabled, (_event, cx) => {
+              setAlertsSettings({ enabled: false });
+              cx.notify();
+            })),
+        },
+        {
+          id: "warn",
+          title: "Warn at",
+          hint: "One warning per window.",
+          content: h_flex()
+            .gap(6)
+            .children([75, 80, 90].map((value) =>
+              chip(t, `runway-alert-warn-${value}`, `${value}%`, alerts.warn === value, (_event, cx) => {
+                setAlertsSettings({ warn: value });
+                cx.notify();
+              }),
+            )),
+        },
+        {
+          id: "critical",
+          title: "Critical at",
+          hint: "One error toast per window.",
+          content: h_flex()
+            .gap(6)
+            .children([90, 95, 100].map((value) =>
+              chip(t, `runway-alert-critical-${value}`, `${value}%`, alerts.critical === value, (_event, cx) => {
+                setAlertsSettings({ critical: value });
+                cx.notify();
+              }),
+            )),
+        },
+        {
+          id: "forecast",
+          title: "Forecast",
+          hint: "Warn when the current pace reaches 100% before reset.",
+          content: h_flex()
+            .gap(6)
+            .child(chip(t, "runway-alert-forecast-on", "On", alerts.forecast, (_event, cx) => {
+              setAlertsSettings({ forecast: true });
+              cx.notify();
+            }))
+            .child(chip(t, "runway-alert-forecast-off", "Off", !alerts.forecast, (_event, cx) => {
+              setAlertsSettings({ forecast: false });
+              cx.notify();
+            })),
+        },
+        {
+          id: "reset",
+          title: "Window reset",
+          hint: "Tell me when a window becomes available again.",
+          content: h_flex()
+            .gap(6)
+            .child(chip(t, "runway-alert-reset-on", "On", alerts.reset, (_event, cx) => {
+              setAlertsSettings({ reset: true });
+              cx.notify();
+            }))
+            .child(chip(t, "runway-alert-reset-off", "Off", !alerts.reset, (_event, cx) => {
+              setAlertsSettings({ reset: false });
+              cx.notify();
+            })),
+        },
+        {
+          id: "snooze",
+          title: "Snooze",
+          hint: snoozed ? `Quiet until ${clockTime(new Date(alerts.snoozeUntil).toISOString())}.` : "Mute every alert for one hour.",
+          content: snoozed
+            ? chip(t, "runway-alert-resume", "Resume", true, (_event, cx) => {
+                setAlertsSettings({ snoozeUntil: 0 });
+                cx.notify();
+              })
+            : chip(t, "runway-alert-snooze", "Snooze 1h", false, (_event, cx) => {
+                setAlertsSettings({ snoozeUntil: Date.now() + 3600000 });
+                cx.notify();
+              }),
+        },
+        {
+          id: "test",
+          title: "Test",
+          hint: "Post one toast so you can check the system settings.",
+          content: chip(t, "runway-alert-test", "Send test", false, () =>
+            notify({ title: "Runway test", body: "Notifications are working.", level: "info" }),
+          ),
+        },
+      ];
+      return setting(
+        "Alerts",
+        "One notification per window and threshold; snooze mutes all of them.",
+        v_flex()
+          .w_full()
+          .rounded(8)
+          .bg(t.raised)
+          .border(1)
+          .border_color(t.border)
+          .overflow_hidden()
+          .children(
+            rows.map((row, index) =>
+              h_flex()
+                .id(`runway-alert-${row.id}`)
+                .w_full()
+                .items_center()
+                .gap(10)
+                .px(12)
+                .py(9)
+                .when(index > 0, (el) => el.border_t(1).border_color(t.border))
+                .child(
+                  v_flex()
+                    .flex_1()
+                    .min_w(0)
+                    .gap(1)
+                    .child(div().text_color(t.foreground).font_semibold().child(row.title))
+                    .child(div().text_color(t.dim).text_size(10.5).child(row.hint)),
+                )
+                .child(row.content),
+            ),
+          ),
+      );
+    })();
+
     const manageBody =
       this.settingsTab === "credentials"
         ? credentialsSection
         : this.settingsTab === "refresh"
           ? refreshSection
-          : providersSection;
+          : this.settingsTab === "alerts"
+            ? alertsSection
+            : providersSection;
     const manage = v_flex().w_full().gap(0).child(manageBody);
 
     const empty = v_flex()
@@ -865,6 +1001,9 @@ export default class AgentUsageDetail extends View {
               ),
               chip(t, "runway-settings-refresh", "Refresh", this.settingsTab === "refresh", (_event, cx) =>
                 this.setSettingsTab("refresh", cx),
+              ),
+              chip(t, "runway-settings-alerts", "Alerts", this.settingsTab === "alerts", (_event, cx) =>
+                this.setSettingsTab("alerts", cx),
               ),
             ]),
         ),

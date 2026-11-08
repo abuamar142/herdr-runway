@@ -7,15 +7,19 @@
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { appHome, exec, nextCommand, openOverlay, setShared, shared, theme } from "herdr";
+import { appHome, exec, nextCommand, notify, openOverlay, setShared, shared, theme } from "herdr";
 import {
   BUSY_KEY,
   SELECTED_KEY,
   SNAPSHOT,
+  alertsSettings,
   barColor,
   countdown,
+  duration,
   keysFile,
   meterPercent,
+  pace,
+  percentLabel,
   primaryWindow,
   providerMinutes,
   providers,
@@ -36,6 +40,7 @@ const MOD_DIR = "runway";
 // svg() resolves against the app config dir, so the `mods/` prefix is required.
 const MOD_PATH = `mods/${MOD_DIR}`;
 const DETAIL_MOD = "runway-detail";
+const ALERT_STATE_KEY = "runway.alert_state";
 
 // The order here is the order in the bar. Each helper answers with its own JSON
 // and may also answer with a readable error; both are normalized below. `logo`
@@ -117,6 +122,10 @@ function hintFor(provider) {
   return [head, ...lines].join("\n");
 }
 
+function alertWindowName(meter) {
+  return String(meter?.label ?? meter?.key ?? "window");
+}
+
 function miniMeter(percent, t) {
   const width = percent > 0 ? Math.max(share(percent), 8) : 0;
   return div()
@@ -152,6 +161,7 @@ export default class AgentUsage extends View {
     this.busy = false;
     this.host = null;
     this.lastSourceRefresh = new Map();
+    this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
     this.refresh(cx);
     cx.timer.every(TICK_MS, (cx) => {
@@ -166,6 +176,101 @@ export default class AgentUsage extends View {
         if (command === "details" || command === "toggle") this.openDetails();
       }
     });
+  }
+
+  readAlertState() {
+    try {
+      if (typeof localStorage === "undefined") return {};
+      const text = localStorage.getItem(ALERT_STATE_KEY);
+      const data = text ? JSON.parse(text) : null;
+      return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  writeAlertState() {
+    try {
+      if (typeof localStorage === "undefined") return;
+      localStorage.setItem(ALERT_STATE_KEY, JSON.stringify(this.alertState));
+    } catch (_) {
+      // A read-only storage only loses deduplication, not the notification.
+    }
+  }
+
+  checkAlerts() {
+    const settings = alertsSettings();
+    if (!settings.enabled || settings.snoozeUntil > Date.now()) return;
+    const state = this.alertState && typeof this.alertState === "object" ? this.alertState : {};
+    const live = new Set();
+    for (const provider of providers()) {
+      if (!provider || provider.error) continue;
+      const windows = Array.isArray(provider.windows) ? provider.windows : [];
+      if (!windows.length) continue;
+      live.add(provider.id);
+      const perProvider =
+        state[provider.id] && typeof state[provider.id] === "object" ? state[provider.id] : {};
+      for (const meter of windows) {
+        const key = String(meter?.key ?? meter?.label ?? "window");
+        const reset = typeof meter?.resets_at === "string" ? meter.resets_at : "";
+        let entry =
+          perProvider[key] && typeof perProvider[key] === "object"
+            ? perProvider[key]
+            : { reset_at: reset, warn: false, critical: false, forecast: false };
+        if (entry.reset_at && reset && entry.reset_at !== reset) {
+          entry = { reset_at: reset, warn: false, critical: false, forecast: false };
+          if (settings.reset) {
+            notify({
+              title: `${provider.name ?? provider.id} reset`,
+              body: `${alertWindowName(meter)} is available again.`,
+              level: "info",
+            });
+          }
+        } else if (entry.reset_at !== reset) {
+          entry.reset_at = reset;
+        }
+
+        const percent = meterPercent(meter);
+        if (percent !== null) {
+          const resetNote = reset ? ` · resets in ${countdown(reset)}` : "";
+          if (percent >= settings.critical && !entry.critical) {
+            notify({
+              title: `${provider.name ?? provider.id} is almost out`,
+              body: `${alertWindowName(meter)} at ${percentLabel(percent)}${resetNote}`,
+              level: "error",
+            });
+            entry.critical = true;
+            entry.warn = true;
+          } else if (percent >= settings.warn && !entry.warn) {
+            notify({
+              title: `${provider.name ?? provider.id} at ${percentLabel(percent)}`,
+              body: `${alertWindowName(meter)}${resetNote}`,
+              level: "warning",
+            });
+            entry.warn = true;
+          }
+        }
+
+        if (settings.forecast && !entry.forecast) {
+          const rate = pace(meter);
+          if (rate && rate.runout !== null) {
+            notify({
+              title: `${provider.name ?? provider.id} may run out`,
+              body: `${alertWindowName(meter)}: limit in ~${duration(rate.runout)} at this pace.`,
+              level: "warning",
+            });
+            entry.forecast = true;
+          }
+        }
+        perProvider[key] = entry;
+      }
+      state[provider.id] = perProvider;
+    }
+    for (const id of Object.keys(state)) {
+      if (!live.has(id)) delete state[id];
+    }
+    this.alertState = state;
+    this.writeAlertState();
   }
 
   helper(source) {
@@ -359,6 +464,7 @@ export default class AgentUsage extends View {
       this.busy = false;
       setShared(BUSY_KEY, false);
       setShared(SNAPSHOT, { fetched_at: new Date().toISOString(), providers: [...byId.values()] });
+      this.checkAlerts();
       cx.notify();
     });
   }
