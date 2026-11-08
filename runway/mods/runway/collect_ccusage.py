@@ -225,6 +225,12 @@ def daily_totals() -> dict:
 
     for agent, bucket in agents.items():
         _round_agent(bucket, model_totals.get(agent, {}))
+    if not agents and rows:
+        raise Unavailable(
+            "ccusage did not report per-agent totals.",
+            "ccusage_unsupported",
+            "Update ccusage; Runway needs the --by-agent JSON shape.",
+        )
     return agents
 
 
