@@ -105,8 +105,9 @@ to the tool's own sign-in. Codex, Antigravity, Kimi and Command Code use
 - Refresh: choose 5, 10, 15, 30, 60 minutes, or Manual.
 - Off providers are not read at all. Their last record stays as a placeholder
   so you can switch them back on; switching one on runs one read.
-- Auto refresh defaults to 5 minutes. A manual refresh postpones the next
-  scheduled read.
+- Auto refresh defaults to 5 minutes. Each provider can override it: the chip
+  in **Providers** cycles Auto/5/10/15/30/60 minutes; Auto follows the global
+  setting. A manual refresh reads every enabled provider regardless.
 
 ## Privacy
 

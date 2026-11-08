@@ -40,6 +40,23 @@ export function selectedProvider() {
   return typeof value === "string" ? value : null;
 }
 
+function cleanMinutes(value) {
+  const minutes = Number(value);
+  return Number.isFinite(minutes) && minutes >= MIN_REFRESH_MINUTES
+    ? Math.round(minutes)
+    : null;
+}
+
+function providerMinutesMap(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const result = {};
+  for (const [id, value] of Object.entries(source)) {
+    const minutes = cleanMinutes(value);
+    if (minutes !== null) result[id] = minutes;
+  }
+  return result;
+}
+
 export function refreshSettings() {
   const value = shared(SETTINGS_KEY);
   const raw = value && typeof value === "object" ? value : {};
@@ -49,13 +66,36 @@ export function refreshSettings() {
       ? Math.max(MIN_REFRESH_MINUTES, Math.round(minutes))
       : DEFAULT_REFRESH_MINUTES,
     manual: raw.manual_only === true,
+    providerMinutes: providerMinutesMap(raw.provider_minutes),
   };
 }
 
 export function setRefreshSettings(minutes, manual) {
+  const current = refreshSettings();
   setShared(SETTINGS_KEY, {
     refresh_minutes: Math.max(MIN_REFRESH_MINUTES, Math.round(Number(minutes) || DEFAULT_REFRESH_MINUTES)),
     manual_only: manual === true,
+    provider_minutes: current.providerMinutes,
+  });
+}
+
+// The interval for one provider: its own override, else the global choice.
+export function providerMinutes(id) {
+  const settings = refreshSettings();
+  return settings.providerMinutes[id] ?? settings.minutes;
+}
+
+// Zero clears the override, so the provider follows the global interval again.
+export function setProviderMinutes(id, minutes) {
+  const settings = refreshSettings();
+  const next = { ...settings.providerMinutes };
+  const clean = cleanMinutes(minutes);
+  if (clean === null || clean === 0) delete next[id];
+  else next[id] = clean;
+  setShared(SETTINGS_KEY, {
+    refresh_minutes: settings.minutes,
+    manual_only: settings.manual,
+    provider_minutes: next,
   });
 }
 

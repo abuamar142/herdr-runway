@@ -35,9 +35,11 @@ import {
   pace,
   percentLabel,
   primaryWindow,
+  providerMinutes,
   providers,
   refreshSettings,
   selectedProvider,
+  setProviderMinutes,
   setRefreshSettings,
   share,
   snapshot,
@@ -53,6 +55,7 @@ const BAR_MOD = "runway";
 const ASSETS = "mods/runway";
 const ENABLED_KEY = "runway.enabled";
 const REFRESH_CHOICES = [5, 10, 15, 30, 60];
+const INTERVAL_CHOICES = [0, 5, 10, 15, 30, 60];
 const LOGOS = {
   claude: "claude.svg",
   "opencode-go": "opencode.svg",
@@ -580,6 +583,8 @@ export default class AgentUsageDetail extends View {
       const percent = meterPercent(primaryWindow(provider));
       const reading = !on ? "" : provider.error ? "!" : percent === null ? "" : percentLabel(percent);
       const plan = subtitle(provider);
+      const override = settings.providerMinutes[provider.id] ?? 0;
+      const interval = override || settings.minutes;
       return h_flex()
         .id(`runway-provider-${provider.id}`)
         .w_full()
@@ -608,6 +613,21 @@ export default class AgentUsageDetail extends View {
           div()
             .text_color(provider.error ? t.blocked : t.dim)
             .child(reading),
+        )
+        .child(
+          chip(
+            t,
+            `runway-interval-${provider.id}`,
+            override ? `${override}m` : "Auto",
+            override > 0,
+            (_event, cx) => {
+              cx.stop_propagation();
+              const at = INTERVAL_CHOICES.indexOf(override);
+              const next = INTERVAL_CHOICES[(at + 1) % INTERVAL_CHOICES.length];
+              setProviderMinutes(provider.id, next);
+              cx.notify();
+            },
+          ).tooltip(`Refresh every ${interval} minutes; click to cycle`),
         )
         .child(toggleSwitch(on, t));
     };
@@ -727,7 +747,7 @@ export default class AgentUsageDetail extends View {
 
     const providersSection = setting(
       "Providers",
-      "Off providers are hidden and never read.",
+      "Off providers are hidden and never read. The chip cycles one provider's refresh interval; Auto follows the global setting.",
       v_flex()
         .w_full()
         .rounded(8)

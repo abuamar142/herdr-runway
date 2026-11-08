@@ -91,9 +91,11 @@ and `Refresh`.
   OAuth login keeps using the Console endpoint, so its dollar figures stay.
 - Saving a key for a provider that is off writes the key but skips the read;
   the row says `Saved` and the provider stays hidden.
-- Auto refresh is 5 minutes by default and never below 5. The next read is
-  scheduled from the snapshot's `fetched_at`, so a manual read postpones it.
-  `Manual` disables periodic reads; the dialog still refreshes on demand.
+- Auto refresh is 5 minutes by default and never below 5. Each provider can
+  override it from the Providers tab: the interval chip cycles
+  Auto/5/10/15/30/60 minutes, and Auto follows the global setting. Reads run
+  in parallel, so one slow provider does not hold the others. `Manual`
+  disables periodic reads; the dialog still refreshes on demand.
 - Turning a provider off hides it from the bar and tabs and **skips its
   collector entirely**. Its last record stays in the snapshot as a placeholder
   so the row can be turned back on; turning it on triggers one immediate read.
@@ -169,7 +171,8 @@ appear in argv or shared state.
 Shared state:
 
 - `runway.snapshot` — `{ fetched_at, providers[] }`
-- `runway.settings` — `{ refresh_minutes, manual_only }`
+- `runway.settings` — `{ refresh_minutes, manual_only, provider_minutes }`;
+  `provider_minutes` is a map from provider id to minutes, absent means global.
 - `runway.busy` — boolean
 - `runway.detail.selected` — provider id
 - `runway.enabled` — array of provider ids; absent means all
@@ -251,6 +254,9 @@ a layout; the bar opens it with `openOverlay`.
 - The busy flag lives in shared state. If the bar is killed mid-read, the next
   start's first read clears it; a killed process can leave `Refreshing…` until
   then.
+- A helper gets 25 seconds; a timeout becomes an error card and the other
+  providers still publish. The underlying process may keep running, but its
+  result is ignored.
 - The preview is composed from two real screenshots (the dialog and the bar)
   on a clean background; it is not drawn by the mod.
 
@@ -274,5 +280,7 @@ a layout; the bar opens it with `openOverlay`.
   expired OpenCode key reports `api_key_expired` with the Console action.
 - Turning it back on runs one read and restores the item.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
+- The interval chip on a provider row cycles Auto/5/10/15/30/60 and the choice
+  survives a restart.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.

@@ -17,6 +17,7 @@ import {
   keysFile,
   meterPercent,
   primaryWindow,
+  providerMinutes,
   providers,
   refreshSettings,
   share,
@@ -27,6 +28,7 @@ import {
 } from "./format.js";
 
 const TICK_MS = 60000;
+const SOURCE_TIMEOUT_MS = 25000;
 const HOSTS = ["python", "python3", "py"];
 const TITLE = "Runway";
 const ENABLED_KEY = "runway.enabled";
@@ -135,11 +137,21 @@ function miniMeter(percent, t) {
     );
 }
 
+function withTimeout(promise, ms, cx) {
+  return Promise.race([
+    promise.then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    ),
+    cx.sleep(ms).then(() => ({ timedOut: true })),
+  ]);
+}
+
 export default class AgentUsage extends View {
   init(_given, cx) {
     this.busy = false;
     this.host = null;
-    this.lastRefresh = 0;
+    this.lastSourceRefresh = new Map();
     // Always paint once on start; the schedule controls the next read.
     this.refresh(cx);
     cx.timer.every(TICK_MS, (cx) => {
@@ -227,6 +239,29 @@ export default class AgentUsage extends View {
     return this.normalizeSource(source, parsed);
   }
 
+  async readSourceWithTimeout(source, cx) {
+    const result = await withTimeout(this.readSource(source), SOURCE_TIMEOUT_MS, cx);
+    if (result.timedOut) {
+      return failed(
+        source,
+        "The usage helper took too long.",
+        "timeout",
+        "Check Python or quota-axi; the next scheduled read will try again.",
+        `No answer within ${Math.round(SOURCE_TIMEOUT_MS / 1000)} seconds.`,
+      );
+    }
+    if (result.error) {
+      return failed(
+        source,
+        "The usage helper failed.",
+        "reader_error",
+        "Run the helper by hand to see the error it printed.",
+        result.error?.message ?? result.error,
+      );
+    }
+    return result.value;
+  }
+
   normalizeSource(source, parsed) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return failed(source, "The usage helper returned no readable JSON.", "reader_error");
@@ -259,25 +294,51 @@ export default class AgentUsage extends View {
   maybeRefresh(cx) {
     const settings = refreshSettings();
     if (settings.manual) return;
-    if (Date.now() - this.lastRefresh >= settings.minutes * 60000) this.refresh(cx);
+    const enabled = enabledSet();
+    const now = Date.now();
+    const due = [];
+    for (const source of SOURCES) {
+      if (!source.multiple && enabled && !enabled.has(source.id)) continue;
+      const last = this.lastSourceRefresh.get(source.id) ?? 0;
+      if (now - last >= providerMinutes(source.id) * 60000) due.push(source.id);
+    }
+    if (due.length) this.refresh(cx, due);
   }
 
-  refresh(cx) {
+  refresh(cx, onlySourceIds = null) {
     if (this.busy) return;
     this.busy = true;
     setShared(BUSY_KEY, true);
-    this.lastRefresh = Date.now();
     cx.notify();
     cx.spawn(async (cx) => {
       const enabled = enabledSet();
+      const active = SOURCES.filter((source) => {
+        if (!source.multiple && enabled && !enabled.has(source.id)) return false;
+        return !onlySourceIds || onlySourceIds.includes(source.id);
+      });
       const byId = new Map(providers().map((provider) => [provider.id, provider]));
-      for (const source of SOURCES) {
-        if (!source.multiple && enabled && !enabled.has(source.id)) continue;
-        const result = await this.readSource(source);
-        if (!result) continue;
+      const results = await Promise.all(
+        active.map(async (source) => {
+          try {
+            return await this.readSourceWithTimeout(source, cx);
+          } catch (error) {
+            return failed(
+              source,
+              "The usage helper failed.",
+              "reader_error",
+              "Run the helper by hand to see the error it printed.",
+              error?.message ?? error,
+            );
+          }
+        }),
+      );
+      active.forEach((source, index) => {
+        this.lastSourceRefresh.set(source.id, Date.now());
+        const result = results[index];
+        if (!result) return;
         const records = Array.isArray(result) ? result : [result];
         for (const record of records) byId.set(record.id, record);
-      }
+      });
       // Keep disabled providers in the snapshot so Providers can turn them
       // back on; a provider that has never been read gets a harmless placeholder.
       for (const known of knownProviders()) {
