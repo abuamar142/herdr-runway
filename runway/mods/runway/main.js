@@ -9,6 +9,7 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import {
   appHome,
+  closeOverlay,
   exec,
   nextCommand,
   notify,
@@ -226,6 +227,7 @@ export default class AgentUsage extends View {
     this.busy = false;
     this.host = null;
     this.lastSourceRefresh = new Map();
+    this.overlayId = null;
     this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
     this.refresh(cx);
@@ -631,14 +633,29 @@ export default class AgentUsage extends View {
       this.busy = false;
       setShared(BUSY_KEY, false);
       setShared(SNAPSHOT, { fetched_at: new Date().toISOString(), providers: [...byId.values()] });
-      this.checkAlerts();
-      await this.recordHistory([...byId.values()]);
+      try {
+        this.checkAlerts();
+      } catch (_) {
+        // A toast failure must not keep the bar busy.
+      }
+      try {
+        await this.recordHistory([...byId.values()]);
+      } catch (_) {
+        // A history failure must not keep the bar busy.
+      }
       cx.notify();
     });
   }
 
   openDetails() {
-    openOverlay({ mod: DETAIL_MOD, kind: "dialog", width: 520 });
+    if (this.overlayId) {
+      try {
+        closeOverlay(this.overlayId);
+      } catch (_) {
+        // Already closed by Esc or a layout switch.
+      }
+    }
+    this.overlayId = openOverlay({ mod: DETAIL_MOD, kind: "dialog", width: 520 });
   }
 
   render(cx) {
