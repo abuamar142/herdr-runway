@@ -193,7 +193,7 @@ provider account (and one quota-axi call for its four providers):
   `~/.kenari/credentials.json`, or the `kenari` block in
   `~/.omp/agent/models.yml`; calls `https://kenari.id/v1` (or
   `KENARI_BASE_URL`).
-- `collect_quota_axi.py` — runs `quota-axi` (or `npx -y quota-axi`) with
+- `collect_quota_axi.py` — runs `quota-axi`, `QUOTA_AXI_BIN`, or a pinned `npx -y quota-axi@0.1.69` with
   `--provider codex,agy,kimi,commandcode --json`, filtered to the enabled
   providers.
 
@@ -308,7 +308,7 @@ a layout; the bar opens it with `openOverlay`.
   and `Manual` exist for that. A rate-limited read is an error card, not stale
   numbers.
 - The collectors read local credentials. They never print tokens, but they do
-  reach the network: Anthropic, OpenCode, Kenari, and `npx` for `quota-axi`.
+  reach the network: Anthropic, OpenCode, Kenari, and pinned `npx` for `quota-axi`.
   Say so before installing.
 - A saved key is plaintext on disk with mode `600`, like
   `~/.kenari/credentials.json`. Anyone who can read the user's home can read

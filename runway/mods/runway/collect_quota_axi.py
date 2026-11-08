@@ -36,7 +36,8 @@ WINDOW_LABELS = {
     "monthly": "month",
     "month": "month",
 }
-TIMEOUT = 35
+TIMEOUT = 20
+QUOTA_AXI_VERSION = "0.1.69"
 
 
 def _text(value):
@@ -127,10 +128,13 @@ def _normalize(provider, name, raw):
 
 
 def _command():
+    override = os.environ.get("QUOTA_AXI_BIN")
+    if override:
+        return [override]
     if shutil.which("quota-axi"):
         return ["quota-axi"]
     if shutil.which("npx"):
-        return ["npx", "-y", "quota-axi"]
+        return ["npx", "-y", f"quota-axi@{QUOTA_AXI_VERSION}"]
     return None
 
 

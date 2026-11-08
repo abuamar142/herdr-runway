@@ -150,7 +150,7 @@ Network endpoints:
 - `https://opencode.ai/console/api/go/status`
 - `https://opencode.ai/zen/go/v1/usage`
 - `https://kenari.id/v1` (or `KENARI_BASE_URL`)
-- `quota-axi` through `npx` when it is not installed globally
+- `quota-axi` through `npx` at the pinned version when it is not installed globally; set `QUOTA_AXI_BIN` to use a trusted binary
 
 The mod runs Python programs with `exec`. Install it only if you trust the
 code in `runway/mods/`.
