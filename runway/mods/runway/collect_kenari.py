@@ -94,8 +94,8 @@ def _stamp(resets_at) -> str:
     return when.strftime("%Y-%m-%d %H:%MZ") if when else "unknown"
 
 
-def read_key(keys_file=None, only_key=False) -> tuple[str, str]:
-    key = read_runway_key(keys_file, PROVIDER)
+def read_key(keys_file=None, only_key=False, key_id=None) -> tuple[str, str]:
+    key = read_runway_key(keys_file, PROVIDER, key_id)
     if key:
         return key, "saved key"
     if only_key:
@@ -272,9 +272,14 @@ def main() -> int:
         if index + 1 < len(argv):
             keys_file = argv[index + 1]
     only_key = "--only-key" in argv
+    key_id = None
+    if "--key-id" in argv:
+        index = argv.index("--key-id")
+        if index + 1 < len(argv):
+            key_id = argv[index + 1]
     source = None
     try:
-        key, source = read_key(keys_file, only_key)
+        key, source = read_key(keys_file, only_key, key_id)
         quota = request_json(f"{BASE_URL}/account/quota", key)
         record = normalize(quota)
         record["source"] = source

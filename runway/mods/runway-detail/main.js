@@ -24,10 +24,13 @@ import {
 } from "herdr";
 import {
   SELECTED_KEY,
+  accountsFor,
+  accountsSettings,
   alertsSettings,
   barColor,
   barSettings,
   barWindow,
+  baseProvider,
   clockTime,
   countdown,
   duration,
@@ -46,6 +49,7 @@ import {
   providers,
   refreshSettings,
   selectedProvider,
+  setAccounts,
   setAlertsSettings,
   setBarSettings,
   setProviderMinutes,
@@ -91,26 +95,37 @@ const SHORT_NAMES = {
   kimi: "Kimi",
   commandcode: "Cmd",
 };
-const CREDENTIALS = [
+const CREDENTIAL_BASES = [
   {
-    id: "claude",
+    base: "claude",
     name: "Claude Code",
     hint: "OAuth token, not an Anthropic API key",
     placeholder: "Paste Claude Code OAuth token",
   },
   {
-    id: "opencode-go",
+    base: "opencode-go",
     name: "OpenCode Go",
     hint: "API key (oc_sk_... or sk-...)",
     placeholder: "Paste OpenCode Go API key",
   },
   {
-    id: "kenari",
+    base: "kenari",
     name: "Kenari",
     hint: "API key",
     placeholder: "Paste Kenari API key",
   },
 ];
+
+function credentialInstances() {
+  return CREDENTIAL_BASES.flatMap((base) =>
+    accountsFor(base.base, base.name).map((account) => ({
+      ...base,
+      id: account.id,
+      label: account.label,
+      extra: account.id !== base.base,
+    })),
+  );
+}
 const WINDOW_NAMES = {
   five_hour: "5-hour",
   fiveHour: "5-hour",
@@ -165,12 +180,12 @@ async function writeKeys(data, expected) {
 function subtitle(provider) {
   const plan = provider?.plan;
   if (typeof plan !== "string" || !plan) return "";
-  return provider.id === "opencode-go" ? `plan ${plan}` : plan;
+  return (provider.base ?? provider.id) === "opencode-go" ? `plan ${plan}` : plan;
 }
 
 // The provider's mark, tinted by the caller; a letter when there is no logo.
 function mark(provider, size, color) {
-  const file = LOGOS[provider.id];
+  const file = LOGOS[provider.base ?? baseProvider(provider.id)] ?? LOGOS[provider.id];
   if (!file) {
     const name = String(provider.name ?? provider.id ?? "?");
     return div().text_color(color).text_size(size - 2).font_semibold().child(name.slice(0, 1).toUpperCase());
@@ -517,14 +532,8 @@ export default class AgentUsageDetail extends View {
     this.testResult = {};
     this.history = { version: 1, providers: {} };
     this.historyRange = "24h";
-    for (const item of CREDENTIALS) {
-      const input = InputState.new({ placeholder: item.placeholder });
-      input.set_masked(true);
-      input.on("submit", (_event, cx) => this.saveKey(item.id, cx));
-      input.on("change", (_event, cx) => cx.notify());
-      this.keyInputs[item.id] = input;
-      this.keyVisible[item.id] = false;
-    }
+    this.labelInputs = {};
+    this.ensureInputs();
     cx.spawn(async (cx) => {
       const text = await readTextFile(keysFile()).catch(() => null);
       this.savedKeys = new Set(
@@ -540,6 +549,95 @@ export default class AgentUsageDetail extends View {
     cx.timer.every(HISTORY_TICK_MS, (cx) => this.loadHistory(cx));
     // The keys below only arrive once the dialog holds the keyboard.
     cx.timer.after(80, () => this.focus.focus());
+  }
+
+  ensureInputs() {
+    for (const item of credentialInstances()) {
+      if (!this.keyInputs[item.id]) {
+        const input = InputState.new({ placeholder: item.placeholder });
+        input.set_masked(true);
+        input.on("submit", (_event, cx) => this.saveKey(item.id, cx));
+        input.on("change", (_event, cx) => cx.notify());
+        this.keyInputs[item.id] = input;
+        this.keyVisible[item.id] = false;
+      }
+      if (item.extra && !this.labelInputs[item.id]) {
+        const label = InputState.new({ placeholder: "Account label" });
+        label.replace(item.label);
+        label.on("submit", (_event, cx) => this.renameAccount(item.id, label.value(), cx));
+        label.on("change", (_event, cx) => cx.notify());
+        this.labelInputs[item.id] = label;
+      }
+    }
+  }
+
+  renameAccount(id, value, cx) {
+    const label = String(value ?? "").trim();
+    if (!label) return;
+    const base = baseProvider(id);
+    const accounts = accountsSettings();
+    const list = accounts[base] ?? [];
+    if (!list.some((account) => account.id === id)) return;
+    setAccounts({
+      ...accounts,
+      [base]: list.map((account) => (account.id === id ? { ...account, label } : account)),
+    });
+    run(`${BAR_MOD}.refresh`);
+    cx.notify();
+  }
+
+  addAccount(baseId, cx) {
+    const base = CREDENTIAL_BASES.find((item) => item.base === baseId);
+    if (!base) return;
+    const accounts = accountsSettings();
+    const list = accounts[baseId] ?? [];
+    let id = `${baseId}:${Date.now().toString(36)}`;
+    while (list.some((account) => account.id === id)) id += "x";
+    const label = `Account ${list.length + 2}`;
+    setAccounts({ ...accounts, [baseId]: [...list, { id, label }] });
+    const enabled = enabledSet();
+    const next = enabled ? new Set(enabled) : new Set(providers().map((provider) => provider.id));
+    next.add(id);
+    setShared(ENABLED_KEY, [...next]);
+    this.ensureInputs();
+    run(`${BAR_MOD}.refresh`);
+    cx.notify();
+  }
+
+  removeAccount(id, cx) {
+    const base = baseProvider(id);
+    const accounts = accountsSettings();
+    const list = accounts[base] ?? [];
+    if (!list.some((account) => account.id === id)) return;
+    const next = list.filter((account) => account.id !== id);
+    const copy = { ...accounts };
+    if (next.length) copy[base] = next;
+    else delete copy[base];
+    setAccounts(copy);
+    const enabled = enabledSet();
+    if (enabled) {
+      enabled.delete(id);
+      setShared(ENABLED_KEY, [...enabled]);
+    }
+    delete this.keyInputs[id];
+    delete this.labelInputs[id];
+    delete this.keyVisible[id];
+    delete this.testing[id];
+    delete this.testResult[id];
+    cx.spawn(async (cx) => {
+      try {
+        const path = keysFile();
+        const current = await readTextFile(path);
+        const data = parseKeys(current);
+        delete data[id];
+        await writeKeys(data, current);
+      } catch (_) {
+        // No saved key, or the file is not writable; the account still goes away.
+      } finally {
+        run(`${BAR_MOD}.refresh`);
+        cx.notify();
+      }
+    });
   }
 
   async loadHistory(cx) {
@@ -655,7 +753,7 @@ export default class AgentUsageDetail extends View {
       notify({ title: "Key is empty", body: "Paste a key first.", level: "warning" });
       return;
     }
-    const helper = HELPERS[id];
+    const helper = HELPERS[baseProvider(id)];
     if (!helper || this.testing[id]) return;
     this.testing[id] = true;
     this.testResult[id] = null;
@@ -679,6 +777,8 @@ export default class AgentUsageDetail extends View {
               "--json",
               "--keys-file",
               path,
+              "--key-id",
+              id,
               "--only-key",
             ]);
             break;
@@ -902,7 +1002,17 @@ export default class AgentUsageDetail extends View {
     const credentialRow = (item, index) => {
       const saved = this.savedKeys.has(item.id);
       const input = this.keyInputs[item.id];
+      if (!input) {
+        return div()
+          .w_full()
+          .p(12)
+          .text_color(t.dim)
+          .text_size(11)
+          .child("Reload the dialog to edit this account.");
+      }
       const canSave = (input.value() ?? "").trim().length > 0;
+      const title = item.extra ? item.label : item.name;
+      const hint = item.extra ? `${item.name} · ${item.hint}` : item.hint;
       const live = providers().find((provider) => provider.id === item.id);
       const diagnostic = [
         live?.source ? `via ${live.source}` : "",
@@ -920,14 +1030,14 @@ export default class AgentUsageDetail extends View {
           h_flex()
             .items_center()
             .gap(8)
-            .child(mark({ id: item.id, name: item.name }, 16, t.foreground))
+            .child(mark({ id: item.base, name: item.name }, 16, t.foreground))
             .child(
               v_flex()
                 .flex_1()
                 .min_w(0)
                 .gap(1)
-                .child(div().text_color(t.foreground).font_semibold().child(item.name))
-                .child(div().text_color(t.dim).text_size(10.5).child(item.hint))
+                .child(div().text_color(t.foreground).font_semibold().child(title))
+                .child(div().text_color(t.dim).text_size(10.5).child(hint))
                 .when(diagnostic, (el) =>
                   el.child(div().text_color(t.dim).text_size(10).child(diagnostic)),
                 ),
@@ -937,7 +1047,57 @@ export default class AgentUsageDetail extends View {
                 .text_color(saved ? t.accent : t.dim)
                 .text_size(10.5)
                 .child(saved ? "Saved" : "Not set"),
+            )
+            .when(item.extra, (el) =>
+              el.child(
+                chip(
+                  t,
+                  `runway-remove-${item.id}`,
+                  "Remove",
+                  false,
+                  (_event, cx) => this.removeAccount(item.id, cx),
+                ),
+              ),
             ),
+        )
+        .when(item.extra, (el) =>
+          el.child(
+            h_flex()
+              .items_center()
+              .gap(6)
+              .child(div().text_color(t.dim).text_size(10.5).child("Label"))
+              .child(
+                div()
+                  .flex_1()
+                  .min_w(0)
+                  .h(26)
+                  .flex()
+                  .items_center()
+                  .rounded(6)
+                  .border(1)
+                  .border_color(t.border)
+                  .bg(t.popover)
+                  .px(8)
+                  .child(
+                    this.labelInputs[item.id]
+                      ? Input.new(this.labelInputs[item.id])
+                          .w_full()
+                          .text_size(11)
+                          .text_color(t.foreground)
+                      : div().text_color(t.dim).child(item.label),
+                  ),
+              )
+              .child(
+                chip(
+                  t,
+                  `runway-rename-${item.id}`,
+                  "Rename",
+                  false,
+                  (_event, cx) =>
+                    this.renameAccount(item.id, this.labelInputs[item.id]?.value(), cx),
+                ),
+              ),
+          ),
         )
         .child(
           h_flex()
@@ -1013,13 +1173,57 @@ export default class AgentUsageDetail extends View {
       .border(1)
       .border_color(t.border)
       .overflow_hidden()
-      .children(CREDENTIALS.map(credentialRow));
+      .children(
+        CREDENTIAL_BASES.flatMap((base, groupIndex) => {
+          const instances = accountsFor(base.base, base.name);
+          const header = h_flex()
+            .w_full()
+            .items_center()
+            .gap(8)
+            .px(12)
+            .py(8)
+            .when(groupIndex > 0, (el) => el.border_t(1).border_color(t.border))
+            .child(mark({ id: base.base, name: base.name }, 16, t.foreground))
+            .child(
+              v_flex()
+                .flex_1()
+                .min_w(0)
+                .gap(1)
+                .child(div().text_color(t.foreground).font_semibold().child(base.name))
+                .child(
+                  div()
+                    .text_color(t.dim)
+                    .text_size(10.5)
+                    .child(`${instances.length} ${instances.length === 1 ? "account" : "accounts"}`),
+                ),
+            )
+            .child(
+              chip(t, `runway-add-${base.base}`, "+ Account", false, (_event, cx) =>
+                this.addAccount(base.base, cx),
+              ),
+            );
+          return [
+            header,
+            ...instances.map((account, index) =>
+              credentialRow(
+                {
+                  ...base,
+                  id: account.id,
+                  label: account.label,
+                  extra: account.id !== base.base,
+                },
+                index,
+              ),
+            ),
+          ];
+        }),
+      );
 
     const credentialsNote = div()
       .text_color(t.dim)
       .text_size(10.5)
       .child(
-        "Codex, Antigravity, Kimi and Command Code use quota-axi sign-in. Keys live in ~/.config/herdr-app/runway-keys.json (mode 600).",
+        "Extra accounts use their own saved key. Codex, Antigravity, Kimi and Command Code use quota-axi sign-in. Keys live in ~/.config/herdr-app/runway-keys.json (mode 600).",
       );
 
     const providersSection = setting(
@@ -1390,7 +1594,16 @@ export default class AgentUsageDetail extends View {
           h_flex().w_full().min_w(0).flex_none().gap(2).border_b(1).border_color(t.border).children(list.map(tab)),
         ),
       )
-      .child(v_flex().w_full().flex_1().min_h(0).child(body))
+      .child(
+        v_flex()
+          .id("runway-detail-body")
+          .w_full()
+          .flex_1()
+          .min_h(0)
+          .when(this.managing, (el) => el.h(560))
+          .overflow_y_scrollbar()
+          .child(body),
+      )
       .child(
         h_flex()
           .items_center()

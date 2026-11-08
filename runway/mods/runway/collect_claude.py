@@ -403,10 +403,10 @@ def read_claude_file(config_dir=None):
 
 
 def read_credentials(
-    config_dir=None, keys_file=None, only_key=False
+    config_dir=None, keys_file=None, only_key=False, key_id=None
 ) -> tuple[str, str | None, str]:
     """Return (access token, plan, source), preferring explicit credentials."""
-    override = read_runway_key(keys_file, PROVIDER)
+    override = read_runway_key(keys_file, PROVIDER, key_id)
     if override:
         try:
             reject_api_key(override)
@@ -529,8 +529,8 @@ def fetch_usage(token: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def collect(config_dir=None, keys_file=None, only_key=False) -> dict:
-    token, plan, source = read_credentials(config_dir, keys_file, only_key)
+def collect(config_dir=None, keys_file=None, only_key=False, key_id=None) -> dict:
+    token, plan, source = read_credentials(config_dir, keys_file, only_key, key_id)
     try:
         data = fetch_usage(token)
     except Unavailable as error:
@@ -560,9 +560,14 @@ def main(argv) -> int:
         if index + 1 < len(argv):
             keys_file = argv[index + 1]
     only_key = "--only-key" in argv
+    key_id = None
+    if "--key-id" in argv:
+        index = argv.index("--key-id")
+        if index + 1 < len(argv):
+            key_id = argv[index + 1]
 
     try:
-        record = collect(config_dir, keys_file, only_key)
+        record = collect(config_dir, keys_file, only_key, key_id)
     except Unavailable as error:
         if as_json:
             print(

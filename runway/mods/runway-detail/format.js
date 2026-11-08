@@ -23,6 +23,7 @@ export const BUSY_KEY = "runway.busy";
 export const SELECTED_KEY = "runway.detail.selected";
 const BAR_KEY = "runway.bar";
 const ORDER_KEY = "runway.order";
+const ACCOUNTS_KEY = "runway.accounts";
 const MIN_REFRESH_MINUTES = 5;
 const DEFAULT_REFRESH_MINUTES = 5;
 
@@ -223,6 +224,51 @@ const UNCONFIGURED = new Set([
 
 export function isUnconfigured(provider) {
   return Boolean(provider && UNCONFIGURED.has(String(provider.code ?? "")));
+}
+
+function cleanAccounts(raw) {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const result = {};
+  for (const [base, entries] of Object.entries(source)) {
+    if (!Array.isArray(entries)) continue;
+    const seen = new Set();
+    const list = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const id = typeof entry.id === "string" ? entry.id.trim() : "";
+      if (!id.startsWith(`${base}:`) || id === base || seen.has(id)) continue;
+      seen.add(id);
+      const label =
+        typeof entry.label === "string" && entry.label.trim()
+          ? entry.label.trim()
+          : `Account ${list.length + 2}`;
+      list.push({ id, label });
+    }
+    if (list.length) result[base] = list;
+  }
+  return result;
+}
+
+export function accountsSettings() {
+  return cleanAccounts(shared(ACCOUNTS_KEY));
+}
+
+export function accountsFor(base, defaultLabel) {
+  const extras = accountsSettings()[base] ?? [];
+  return [
+    { id: base, label: typeof defaultLabel === "string" && defaultLabel ? defaultLabel : base },
+    ...extras,
+  ];
+}
+
+export function setAccounts(value) {
+  setShared(ACCOUNTS_KEY, cleanAccounts(value));
+}
+
+export function baseProvider(id) {
+  const text = String(id ?? "");
+  const at = text.indexOf(":");
+  return at > 0 ? text.slice(0, at) : text;
 }
 
 export function providerOrder() {

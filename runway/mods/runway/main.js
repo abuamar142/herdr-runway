@@ -23,10 +23,12 @@ import {
   BUSY_KEY,
   SELECTED_KEY,
   SNAPSHOT,
+  accountsFor,
   alertsSettings,
   barColor,
   barSettings,
   barWindow,
+  baseProvider,
   countdown,
   duration,
   historyFile,
@@ -90,20 +92,50 @@ function enabledSet() {
   return Array.isArray(value) ? new Set(value.map(String)) : null;
 }
 
+function sources() {
+  const result = [];
+  for (const source of SOURCES) {
+    if (source.multiple) {
+      result.push(source);
+      continue;
+    }
+    for (const account of accountsFor(source.id, source.name)) {
+      result.push({
+        ...source,
+        id: account.id,
+        name: account.label,
+        base: source.id,
+        keyId: account.id,
+        auto: account.id === source.id,
+      });
+    }
+  }
+  return result;
+}
+
 function knownProviders() {
   const known = [];
-  for (const source of SOURCES) {
-    if (Array.isArray(source.providers)) known.push(...source.providers);
-    else known.push({ id: source.id, name: source.name });
+  for (const source of sources()) {
+    if (Array.isArray(source.providers)) {
+      known.push(...source.providers.map((provider) => ({ ...provider, base: provider.id })));
+    } else {
+      known.push({
+        id: source.id,
+        name: source.name,
+        base: source.base ?? source.id,
+        account: source.keyId ?? source.id,
+      });
+    }
   }
   return known;
 }
 
 function logoFor(id) {
-  const source = SOURCES.find((candidate) => candidate.id === id);
+  const base = baseProvider(id);
+  const source = SOURCES.find((candidate) => candidate.id === base);
   if (source?.logo) return source.logo;
   for (const candidate of SOURCES) {
-    if (candidate.logos?.[id]) return candidate.logos[id];
+    if (candidate.logos?.[base]) return candidate.logos[base];
   }
   return null;
 }
@@ -122,6 +154,8 @@ function failed(source, error, code, action, detail, extra = {}) {
     failure: detail ? String(detail).slice(0, 400) : null,
     source: typeof extra.source === "string" ? extra.source : null,
     http_status: typeof extra.http_status === "number" ? extra.http_status : null,
+    base: extra.base ?? source.base ?? null,
+    account: extra.account ?? source.keyId ?? null,
   };
 }
 
@@ -380,7 +414,10 @@ export default class AgentUsage extends View {
 
   async runHelper(source) {
     const args = [this.helper(source), "--json"];
-    if (source.keys) args.push("--keys-file", keysFile());
+    if (source.keys) {
+      args.push("--keys-file", keysFile(), "--key-id", source.keyId ?? source.id);
+      if (source.auto === false) args.push("--only-key");
+    }
     if (source.multiple) {
       const enabled = enabledSet();
       const ids = source.providers
@@ -472,17 +509,32 @@ export default class AgentUsage extends View {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return failed(source, "The usage helper returned no readable JSON.", "reader_error");
     }
-    const id = typeof parsed.id === "string" && parsed.id ? parsed.id : source.id;
-    const name = typeof parsed.name === "string" && parsed.name ? parsed.name : source.name;
+    const multiple = source.multiple === true;
+    const id = multiple
+      ? typeof parsed.id === "string" && parsed.id
+        ? parsed.id
+        : source.id
+      : source.id;
+    const name = multiple
+      ? typeof parsed.name === "string" && parsed.name
+        ? parsed.name
+        : source.name
+      : source.name;
+    const base = multiple ? id : (source.base ?? source.id);
+    const account = multiple ? null : (source.keyId ?? source.id);
     if (parsed.error) {
-      return failed({ id, name }, parsed.error, parsed.code, parsed.action, parsed.failure, {
+      return failed({ id, name, base, keyId: account }, parsed.error, parsed.code, parsed.action, parsed.failure, {
         source: typeof parsed.source === "string" ? parsed.source : null,
         http_status: typeof parsed.http_status === "number" ? parsed.http_status : null,
+        base,
+        account,
       });
     }
     return {
       id,
       name,
+      base,
+      account,
       plan:
         typeof parsed.product === "string"
           ? parsed.product
@@ -508,7 +560,7 @@ export default class AgentUsage extends View {
     const enabled = enabledSet();
     const now = Date.now();
     const due = [];
-    for (const source of SOURCES) {
+    for (const source of sources()) {
       if (!source.multiple && enabled && !enabled.has(source.id)) continue;
       const last = this.lastSourceRefresh.get(source.id) ?? 0;
       if (now - last >= providerMinutes(source.id) * 60000) due.push(source.id);
@@ -523,7 +575,7 @@ export default class AgentUsage extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       const enabled = enabledSet();
-      const active = SOURCES.filter((source) => {
+      const active = sources().filter((source) => {
         if (!source.multiple && enabled && !enabled.has(source.id)) return false;
         return !onlySourceIds || onlySourceIds.includes(source.id);
       });
@@ -552,11 +604,13 @@ export default class AgentUsage extends View {
       });
       // Keep disabled providers in the snapshot so Providers can turn them
       // back on; a provider that has never been read gets a harmless placeholder.
-      for (const known of knownProviders()) {
-        if (!byId.has(known.id)) {
-          byId.set(known.id, {
-            id: known.id,
-            name: known.name,
+      const known = knownProviders();
+      const knownIds = new Set(known.map((provider) => provider.id));
+      for (const provider of known) {
+        if (!byId.has(provider.id)) {
+          byId.set(provider.id, {
+            id: provider.id,
+            name: provider.name,
             plan: null,
             windows: [],
             money: null,
@@ -566,8 +620,13 @@ export default class AgentUsage extends View {
             failure: null,
             source: null,
             http_status: null,
+            base: provider.base ?? null,
+            account: provider.account ?? null,
           });
         }
+      }
+      for (const id of [...byId.keys()]) {
+        if (!knownIds.has(id)) byId.delete(id);
       }
       this.busy = false;
       setShared(BUSY_KEY, false);

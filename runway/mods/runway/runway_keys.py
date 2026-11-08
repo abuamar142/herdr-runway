@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 
-def read_key(path, provider: str) -> str | None:
+def read_key(path, provider: str, key_id: str | None = None) -> str | None:
     if not path:
         return None
     try:
@@ -21,7 +21,7 @@ def read_key(path, provider: str) -> str | None:
         return None
     if not isinstance(data, dict):
         return None
-    value = data.get(provider)
+    value = data.get(key_id or provider)
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None

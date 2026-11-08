@@ -89,8 +89,10 @@ Herdr's shared state and are never logged.
 - **Kenari** takes an API key.
 
 The panel's saved key wins over every automatic source. Clear it to fall back
-to the tool's own sign-in. Codex, Antigravity, Kimi and Command Code use
-`quota-axi`'s own sign-in and have no key field.
+to the tool's own sign-in. Extra accounts are stored in the same key file under
+an instance id such as `claude:work`; they never use the tool's own sign-in.
+Codex, Antigravity, Kimi and Command Code use `quota-axi`'s own sign-in, keep
+one account, and have no key field.
 
 ## Use
 
@@ -106,6 +108,10 @@ to the tool's own sign-in. Codex, Antigravity, Kimi and Command Code use
 - Credentials: paste a key, press Save (or Enter), use Show/Hide, **Test** to
   validate it without saving, and Clear to return to automatic detection. Each
   row also shows which source the last read used and its HTTP status.
+- Credentials groups Claude Code, OpenCode Go and Kenari. **+ Account** adds a
+  second account with its own label and key; extra accounts need a saved key.
+  Rename or Remove an extra account from its row. The dialog body scrolls when
+  the list grows.
 - Refresh: choose 5, 10, 15, 30, 60 minutes, or Manual.
 - Alerts: choose warn/critical percentages, forecast and reset toasts, or
   snooze for an hour. **Send test** posts one toast.

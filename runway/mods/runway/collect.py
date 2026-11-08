@@ -481,8 +481,8 @@ def fetch_api(token: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def collect(db_path=None, keys_file=None, only_key=False) -> dict:
-    override = read_runway_key(keys_file, PROVIDER)
+def collect(db_path=None, keys_file=None, only_key=False, key_id=None) -> dict:
+    override = read_runway_key(keys_file, PROVIDER, key_id)
     if override:
         try:
             record = normalize_api(fetch_api(override))
@@ -554,9 +554,14 @@ def main(argv) -> int:
         if index + 1 < len(argv):
             keys_file = argv[index + 1]
     only_key = "--only-key" in argv
+    key_id = None
+    if "--key-id" in argv:
+        index = argv.index("--key-id")
+        if index + 1 < len(argv):
+            key_id = argv[index + 1]
 
     try:
-        record = collect(db_path, keys_file, only_key)
+        record = collect(db_path, keys_file, only_key, key_id)
     except Unavailable as error:
         if as_json:
             print(

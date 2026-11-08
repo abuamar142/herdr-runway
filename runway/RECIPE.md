@@ -60,12 +60,14 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 
 - `Providers`, with one row per known provider: mark, name, plan, current
   reading, and a 34×20px switch. Off rows are dimmed.
-- `Credentials`, with one row for Claude Code, OpenCode Go and Kenari. Each row
-  has a 16px mark, the name, a one-line hint, the last read's source and HTTP
-  status, a `Saved`/`Not set` status, a 30px masked input, and `Show`, `Test`,
-  `Save` and (when saved) `Clear`. A test result appears under the input. A
-  footnote says Codex, Antigravity, Kimi and Command Code use `quota-axi`
-  sign-in, and names the key file.
+- `Credentials`, grouped by Claude Code, OpenCode Go and Kenari. A group
+  header has the mark, the provider name, the account count and `+ Account`.
+  Each account row has the label, the last read's source and HTTP status, a
+  `Saved`/`Not set` status, a 30px masked input, `Show`, `Test`, `Save`, and
+  (when saved) `Clear`. Extra rows add a label input with `Rename` and a
+  `Remove` chip. A test result appears under the input. A footnote says extra
+  accounts need their own key, names `quota-axi` for the four non-key
+  providers, and names the key file. The settings body scrolls when it grows.
 - `Refresh`, with chips `5m 10m 15m 30m 60m | Manual`. The active chip has an
   `accent` border and an 18% `accent` fill. The hint reads
   `Every 5 minutes · next in 3m` or `Reads only when you press Refresh.`
@@ -83,11 +85,18 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   updates the snapshot, clears the busy flag, and re-renders every mod.
 - Saving a credential writes `~/.config/herdr-app/runway-keys.json` with mode
   `600`, clears the input, marks the row `Saved`, and runs one refresh.
-  Clearing deletes that provider's entry and runs one refresh; the collector
-  falls back to the tool's own sign-in. **Test** does not save: it writes the
-  pasted value to a short-lived `runway-test-*.json` (mode 600), runs the
-  helper with `--only-key`, shows the helper's answer under the input, and
-  deletes the file.
+  Clearing deletes that account's entry and runs one refresh; the default
+  account falls back to the tool's own sign-in, an extra account reports
+  `missing_key`. **Test** does not save: it writes the pasted value to a
+  short-lived `runway-test-*.json` (mode 600), runs the helper with
+  `--key-id <instance> --only-key`, shows the helper's answer under the input,
+  and deletes the file.
+- **+ Account** creates an id `<base>:<random>` and a default label
+  `Account N`, adds it to `runway.enabled`, and runs one refresh. An extra
+  account has no fallback: its collector gets `--only-key`, so it shows
+  `missing_key` until a key is saved. **Rename** updates the shared label and
+  refreshes; **Remove** drops the account, its key entry, its enabled id and
+  its dialog inputs, then refreshes so the bar prunes it.
 - A saved key overrides every automatic source. With no saved key, Claude
   reads `CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's credential file, then an
   OAuth `anthropic` entry in OpenCode's `auth.json`. OpenCode reads its SQLite
@@ -150,8 +159,9 @@ folder. Keep the two copies byte-identical.
 The bar reads providers with `exec` on `python`/`python3`/`py`, one helper per
 source:
 
-- `runway_keys.py` — reads one provider's entry from Runway's key file; a
-  missing or malformed file is not an error.
+- `runway_keys.py` — reads one provider's entry, or one account entry by
+  `--key-id`, from Runway's key file; a missing or malformed file is not an
+  error.
 - `collect_claude.py` — reads a saved token, `CLAUDE_CODE_OAUTH_TOKEN`, Claude
   Code's `.credentials.json`, or an OAuth `anthropic` entry in OpenCode's
   `auth.json`; calls `https://api.anthropic.com/api/oauth/usage`.
@@ -188,6 +198,7 @@ The credential file is:
 ```json
 {
   "claude": "eyJ...",
+  "claude:work": "eyJ...",
   "opencode-go": "oc_sk_...",
   "kenari": "sk-..."
 }
@@ -205,6 +216,9 @@ Shared state:
 - `runway.alerts` — `{ enabled, warn, critical, forecast, reset, snooze_until }`.
 - `runway.bar` — `{ window, mode, hide_unconfigured }`.
 - `runway.order` — provider ids in bar/tab order; absent means snapshot order.
+- `runway.accounts` — extra accounts keyed by base provider:
+  `{ claude: [{ id: "claude:work", label: "Work" }] }`. The default account
+  (`claude`) is implicit. Snapshot records carry `base` and `account`.
 
 History is not shared state; it is a JSON file at
 `~/.config/herdr-app/runway-history.json`:
@@ -278,6 +292,12 @@ a layout; the bar opens it with `openOverlay`.
   it. `chmod` is skipped on Windows, where the profile ACL applies. The Test
   temp file is mode `600` and is deleted in `finally`, even when the helper
   fails.
+- Extra accounts are only for the three key providers. `quota-axi` owns the
+  other four sign-ins, so they have no `+ Account`; adding a fake account
+  would only duplicate one result.
+- `runway.accounts` is shared state, so the bar and dialog agree. Removing an
+  account prunes its snapshot record on the next refresh; its old history
+  points stay in the history file until the seven-day cutoff.
 - Claude's field is an **OAuth token**, not an Anthropic API key. The collector
   rejects `sk-ant-api...` before a request; subscription usage cannot be read
   with an API key.
@@ -322,6 +342,9 @@ a layout; the bar opens it with `openOverlay`.
 - Each credential row shows the source and HTTP status of the last read.
   **Test** with a valid key says `Valid`; a bad key shows the helper error and
   code, and leaves no `runway-test-*.json` behind.
+- `+ Account` adds a labelled row and a second tab/bar item. Saving the same
+  Kenari key under `kenari:test` shows `source: saved key` and a second `K`
+  item; Remove deletes the key entry, the snapshot record and the enabled id.
 - Turning it back on runs one read and restores the item.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
 - The interval chip on a provider row cycles Auto/5/10/15/30/60 and the choice
