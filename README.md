@@ -98,13 +98,18 @@ to the tool's own sign-in. Codex, Antigravity, Kimi and Command Code use
   last selected provider.
 - In the dialog: `←`/`→` step providers, `1`–`9` pick one, `R` refreshes,
   `S` opens settings, `Esc` closes.
-- The gear opens settings: **Providers**, **Credentials**, **Refresh** and
-  **Alerts** are separate tabs.
+- The gear opens settings: **Providers**, **Credentials**, **Refresh**,
+  **Alerts** and **Bar** are separate tabs.
 - Credentials: paste a key, press Save (or Enter), use Show/Hide, and Clear to
   return to automatic detection.
 - Refresh: choose 5, 10, 15, 30, 60 minutes, or Manual.
 - Alerts: choose warn/critical percentages, forecast and reset toasts, or
   snooze for an hour. **Send test** posts one toast.
+- Bar: choose which window the bar reads (`Primary`, `5h`, `Week`, `Month`,
+  `Worst`), whether it shows `All`, `Critical` or `Worst`, and whether to hide
+  providers with no credential.
+- Providers: the `↑`/`↓` chips reorder the bar and tabs; the order survives a
+  restart. The interval chip cycles Auto/5/10/15/30/60 minutes.
 - Off providers are not read at all. Their last record stays as a placeholder
   so you can switch them back on; switching one on runs one read.
 - Auto refresh defaults to 5 minutes. Each provider can override it: the chip

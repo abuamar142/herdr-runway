@@ -14,13 +14,16 @@ import {
   SNAPSHOT,
   alertsSettings,
   barColor,
+  barSettings,
+  barWindow,
   countdown,
   duration,
+  isUnconfigured,
   keysFile,
   meterPercent,
+  orderedProviders,
   pace,
   percentLabel,
-  primaryWindow,
   providerMinutes,
   providers,
   refreshSettings,
@@ -154,6 +157,20 @@ function withTimeout(promise, ms, cx) {
     ),
     cx.sleep(ms).then(() => ({ timedOut: true })),
   ]);
+}
+
+function worstProvider(list, mode) {
+  let best = null;
+  let bestPercent = -1;
+  for (const provider of list) {
+    if (provider.error) continue;
+    const percent = meterPercent(barWindow(provider, mode));
+    if (percent !== null && percent > bestPercent) {
+      best = provider;
+      bestPercent = percent;
+    }
+  }
+  return best ?? list[0] ?? null;
 }
 
 export default class AgentUsage extends View {
@@ -476,7 +493,20 @@ export default class AgentUsage extends View {
   render(cx) {
     const t = theme();
     const enabled = enabledSet();
-    const list = enabled ? providers().filter((provider) => enabled.has(provider.id)) : providers();
+    const ui = barSettings();
+    let list = orderedProviders(providers());
+    if (enabled) list = list.filter((provider) => enabled.has(provider.id));
+    if (ui.hideUnconfigured) list = list.filter((provider) => !isUnconfigured(provider));
+    if (ui.mode === "critical") {
+      const warn = alertsSettings().warn;
+      const hot = list.filter(
+        (provider) => provider.error || (meterPercent(barWindow(provider, ui.window)) ?? -1) >= warn,
+      );
+      if (hot.length) list = hot;
+      else if (list.length) list = [worstProvider(list, ui.window)];
+    } else if (ui.mode === "worst" && list.length) {
+      list = [worstProvider(list, ui.window)];
+    }
     const settings = refreshSettings();
     const fetched = snapshot()?.fetched_at;
     // A read that is long overdue dims the numbers instead of passing them off as current.
@@ -487,7 +517,7 @@ export default class AgentUsage extends View {
 
     const providerItem = (provider) => {
       const logo = logoFor(provider.id);
-      const primary = provider.error ? null : primaryWindow(provider);
+      const primary = provider.error ? null : barWindow(provider, ui.window);
       const percent = meterPercent(primary);
       return h_flex()
         .id(`runway-p-${provider.id}`)

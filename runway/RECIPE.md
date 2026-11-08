@@ -51,8 +51,8 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Footer: `Updated 4:30 PM · next in 4m` (or `manual refresh`) and a Refresh
   button with a 12px glyph that spins while busy.
 
-**Settings** replaces the body with four tabs: `Providers`, `Credentials`,
-`Refresh` and `Alerts`.
+**Settings** replaces the body with five tabs: `Providers`, `Credentials`,
+`Refresh`, `Alerts` and `Bar`.
 
 - `Providers`, with one row per known provider: mark, name, plan, current
   reading, and a 34×20px switch. Off rows are dimmed.
@@ -105,6 +105,12 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Turning a provider off hides it from the bar and tabs and **skips its
   collector entirely**. Its last record stays in the snapshot as a placeholder
   so the row can be turned back on; turning it on triggers one immediate read.
+- The `↑`/`↓` chips in Providers move a provider in the bar and tabs. The
+  order is shared, so the dialog and bar agree.
+- `Bar` chooses the window used by the bar and tab suffixes, and the density
+  mode. `Worst` picks the highest usage and ignores error records unless every
+  provider is erroring. `Hide unconfigured` removes `not_signed_in` and
+  `auth_required` records.
 - A failed read replaces that provider's data with an error record; other
   providers keep their data. The bar shows `!`; the dialog shows the error card.
 - Windows with no reset time show `No reset time`. Providers with no reading
@@ -180,6 +186,8 @@ Shared state:
 - `runway.settings` — `{ refresh_minutes, manual_only, provider_minutes }`;
   `provider_minutes` is a map from provider id to minutes, absent means global.
 - `runway.alerts` — `{ enabled, warn, critical, forecast, reset, snooze_until }`.
+- `runway.bar` — `{ window, mode, hide_unconfigured }`.
+- `runway.order` — provider ids in bar/tab order; absent means snapshot order.
 - `runway.busy` — boolean
 - `runway.detail.selected` — provider id
 - `runway.enabled` — array of provider ids; absent means all
@@ -289,8 +297,11 @@ a layout; the bar opens it with `openOverlay`.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
 - The interval chip on a provider row cycles Auto/5/10/15/30/60 and the choice
   survives a restart.
-- Alerts shows the four tabs and the Send test toast appears. Crossing a
+- Alerts shows the five tabs and the Send test toast appears. Crossing a
   threshold writes `warn`/`critical` into `data/runway/store.json` and does not
   repeat on the next refresh.
+- Bar changes the window and density; `Worst` shows one provider and `Critical`
+  falls back to the highest when nothing crosses the warn threshold.
+- The `↑`/`↓` chips reorder the bar and survive a restart.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.

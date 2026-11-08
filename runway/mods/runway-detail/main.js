@@ -24,6 +24,8 @@ import {
   SELECTED_KEY,
   alertsSettings,
   barColor,
+  barSettings,
+  barWindow,
   clockTime,
   countdown,
   duration,
@@ -33,6 +35,7 @@ import {
   moneyMeter,
   moneyPair,
   nextRefreshMs,
+  orderedProviders,
   pace,
   percentLabel,
   primaryWindow,
@@ -41,7 +44,9 @@ import {
   refreshSettings,
   selectedProvider,
   setAlertsSettings,
+  setBarSettings,
   setProviderMinutes,
+  setProviderOrder,
   setRefreshSettings,
   share,
   snapshot,
@@ -117,7 +122,7 @@ function providerEnabled(id) {
 
 function visibleProviders() {
   const enabled = enabledSet();
-  const all = providers();
+  const all = orderedProviders();
   return enabled ? all.filter((provider) => enabled.has(provider.id)) : all;
 }
 
@@ -503,6 +508,16 @@ export default class AgentUsageDetail extends View {
     cx.notify();
   }
 
+  moveProvider(id, delta, cx) {
+    const ids = orderedProviders().map((provider) => provider.id);
+    const at = ids.indexOf(id);
+    const to = at + delta;
+    if (at < 0 || to < 0 || to >= ids.length) return;
+    [ids[at], ids[to]] = [ids[to], ids[at]];
+    setProviderOrder(ids);
+    cx.notify();
+  }
+
   toggleProvider(id, cx) {
     const all = providers().map((provider) => provider.id);
     const enabled = enabledSet() ?? new Set(all);
@@ -538,8 +553,9 @@ export default class AgentUsageDetail extends View {
 
   render(cx) {
     const t = theme();
-    const all = providers();
+    const all = orderedProviders();
     const list = visibleProviders();
+    const bar = barSettings();
     const selected = pick(list);
     const current = list.find((provider) => provider.id === selected) ?? null;
     const settings = refreshSettings();
@@ -550,7 +566,7 @@ export default class AgentUsageDetail extends View {
 
     const tab = (provider) => {
       const active = provider.id === selected;
-      const percent = meterPercent(primaryWindow(provider));
+      const percent = meterPercent(barWindow(provider, bar.window));
       const suffix = provider.error ? "!" : percent === null ? "" : percentLabel(percent);
       const name = String(SHORT_NAMES[provider.id] ?? provider.name ?? provider.id ?? "");
       return v_flex()
@@ -616,6 +632,18 @@ export default class AgentUsageDetail extends View {
           div()
             .text_color(provider.error ? t.blocked : t.dim)
             .child(reading),
+        )
+        .child(
+          chip(t, `runway-up-${provider.id}`, "↑", false, (_event, cx) => {
+            cx.stop_propagation();
+            this.moveProvider(provider.id, -1, cx);
+          }).tooltip("Move up"),
+        )
+        .child(
+          chip(t, `runway-down-${provider.id}`, "↓", false, (_event, cx) => {
+            cx.stop_propagation();
+            this.moveProvider(provider.id, 1, cx);
+          }).tooltip("Move down"),
         )
         .child(
           chip(
@@ -921,6 +949,97 @@ export default class AgentUsageDetail extends View {
       );
     })();
 
+    const barSection = (() => {
+      const windowChoices = [
+        ["primary", "Primary"],
+        ["five_hour", "5h"],
+        ["week", "Week"],
+        ["month", "Month"],
+        ["worst", "Worst"],
+      ];
+      const modeChoices = [
+        ["all", "All"],
+        ["critical", "Critical"],
+        ["worst", "Worst"],
+      ];
+      const row = (id, title, hint, content) =>
+        h_flex()
+          .id(`runway-bar-${id}`)
+          .w_full()
+          .items_center()
+          .gap(10)
+          .px(12)
+          .py(9)
+          .when(id !== "window", (el) => el.border_t(1).border_color(t.border))
+          .child(
+            v_flex()
+              .flex_1()
+              .min_w(0)
+              .gap(1)
+              .child(div().text_color(t.foreground).font_semibold().child(title))
+              .child(div().text_color(t.dim).text_size(10.5).child(hint)),
+          )
+          .child(content);
+      return setting(
+        "Bar",
+        "What the bottom bar shows.",
+        v_flex()
+          .w_full()
+          .rounded(8)
+          .bg(t.raised)
+          .border(1)
+          .border_color(t.border)
+          .overflow_hidden()
+          .child(
+            row(
+              "window",
+              "Window",
+              "Which window the bar reads for each provider.",
+              h_flex()
+                .gap(5)
+                .children(windowChoices.map(([value, label]) =>
+                  chip(t, `runway-bar-window-${value}`, label, bar.window === value, (_event, cx) => {
+                    setBarSettings({ window: value });
+                    cx.notify();
+                  }),
+                )),
+            ),
+          )
+          .child(
+            row(
+              "mode",
+              "Show",
+              "Critical uses the warn threshold; Worst keeps one provider.",
+              h_flex()
+                .gap(5)
+                .children(modeChoices.map(([value, label]) =>
+                  chip(t, `runway-bar-mode-${value}`, label, bar.mode === value, (_event, cx) => {
+                    setBarSettings({ mode: value });
+                    cx.notify();
+                  }),
+                )),
+            ),
+          )
+          .child(
+            row(
+              "unconfigured",
+              "Hide unconfigured",
+              "Hide providers with no credential instead of an error item.",
+              h_flex()
+                .gap(6)
+                .child(chip(t, "runway-bar-hide-on", "On", bar.hideUnconfigured, (_event, cx) => {
+                  setBarSettings({ hideUnconfigured: true });
+                  cx.notify();
+                }))
+                .child(chip(t, "runway-bar-hide-off", "Off", !bar.hideUnconfigured, (_event, cx) => {
+                  setBarSettings({ hideUnconfigured: false });
+                  cx.notify();
+                })),
+            ),
+          ),
+      );
+    })();
+
     const manageBody =
       this.settingsTab === "credentials"
         ? credentialsSection
@@ -928,7 +1047,9 @@ export default class AgentUsageDetail extends View {
           ? refreshSection
           : this.settingsTab === "alerts"
             ? alertsSection
-            : providersSection;
+            : this.settingsTab === "bar"
+              ? barSection
+              : providersSection;
     const manage = v_flex().w_full().gap(0).child(manageBody);
 
     const empty = v_flex()
@@ -1004,6 +1125,9 @@ export default class AgentUsageDetail extends View {
               ),
               chip(t, "runway-settings-alerts", "Alerts", this.settingsTab === "alerts", (_event, cx) =>
                 this.setSettingsTab("alerts", cx),
+              ),
+              chip(t, "runway-settings-bar", "Bar", this.settingsTab === "bar", (_event, cx) =>
+                this.setSettingsTab("bar", cx),
               ),
             ]),
         ),

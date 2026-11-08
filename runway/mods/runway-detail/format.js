@@ -16,7 +16,8 @@ export const ALERTS_KEY = "runway.alerts";
 export const BUSY_KEY = "runway.busy";
 // The provider the dialog opens on; the bar writes it when a provider is clicked.
 export const SELECTED_KEY = "runway.detail.selected";
-const COMPACT_KEY = "runway.compact";
+const BAR_KEY = "runway.bar";
+const ORDER_KEY = "runway.order";
 const MIN_REFRESH_MINUTES = 5;
 const DEFAULT_REFRESH_MINUTES = 5;
 
@@ -138,23 +139,28 @@ export function setAlertsSettings(patch) {
   });
 }
 
-// Compact is the default: one window per provider, the five-hour one.
-export function compact() {
-  try {
-    if (typeof localStorage === "undefined") return true;
-    return localStorage.getItem(COMPACT_KEY) !== "0";
-  } catch (_) {
-    return true;
-  }
+export function barSettings() {
+  const value = shared(BAR_KEY);
+  const raw = value && typeof value === "object" ? value : {};
+  const window = ["primary", "five_hour", "week", "month", "worst"].includes(raw.window)
+    ? raw.window
+    : "primary";
+  const mode = ["all", "critical", "worst"].includes(raw.mode) ? raw.mode : "all";
+  return { window, mode, hideUnconfigured: raw.hide_unconfigured === true };
 }
 
-export function setCompact(value) {
-  try {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(COMPACT_KEY, value ? "1" : "0");
-  } catch (_) {
-    // A read-only storage keeps the bar usable; the mode just does not persist.
-  }
+export function setBarSettings(patch) {
+  const current = barSettings();
+  const next = { ...current, ...(patch && typeof patch === "object" ? patch : {}) };
+  const window = ["primary", "five_hour", "week", "month", "worst"].includes(next.window)
+    ? next.window
+    : current.window;
+  const mode = ["all", "critical", "worst"].includes(next.mode) ? next.mode : current.mode;
+  setShared(BAR_KEY, {
+    window,
+    mode,
+    hide_unconfigured: next.hideUnconfigured === true,
+  });
 }
 
 // The window worth showing when there is room for only one: the rolling
@@ -169,6 +175,74 @@ export function primaryWindow(provider) {
   const withPercent = windows.find((meter) => typeof meter.percent === "number");
   return withPercent ?? windows[0] ?? null;
 }
+
+const WINDOW_KEYS = {
+  five_hour: ["five_hour", "fiveHour"],
+  week: ["week", "7d", "seven_day"],
+  month: ["month", "30d"],
+};
+
+// The bar's window choice, with a fallback when that window is absent.
+export function barWindow(provider, mode = "primary") {
+  const windows = provider && Array.isArray(provider.windows) ? provider.windows : [];
+  if (mode === "worst") {
+    let best = null;
+    let bestPercent = -1;
+    for (const meter of windows) {
+      const percent = meterPercent(meter);
+      if (percent !== null && percent > bestPercent) {
+        best = meter;
+        bestPercent = percent;
+      }
+    }
+    return best ?? primaryWindow(provider);
+  }
+  const keys = WINDOW_KEYS[mode];
+  if (keys) {
+    for (const key of keys) {
+      const match = windows.find((meter) => meter.key === key);
+      if (match) return match;
+    }
+  }
+  return primaryWindow(provider);
+}
+
+const UNCONFIGURED = new Set([
+  "not_signed_in",
+  "auth_required",
+  "missing_key",
+  "no_key",
+  "no_credential",
+  "not_configured",
+]);
+
+export function isUnconfigured(provider) {
+  return Boolean(provider && UNCONFIGURED.has(String(provider.code ?? "")));
+}
+
+export function providerOrder() {
+  const value = shared(ORDER_KEY);
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+export function setProviderOrder(ids) {
+  setShared(ORDER_KEY, Array.isArray(ids) ? ids.map(String) : []);
+}
+
+export function orderedProviders(list = providers()) {
+  const order = providerOrder();
+  if (!order.length) return list;
+  const at = new Map(order.map((id, index) => [id, index]));
+  return list
+    .map((provider, index) => ({ provider, index }))
+    .sort((a, b) => {
+      const ai = at.has(a.provider.id) ? at.get(a.provider.id) : order.length + a.index;
+      const bi = at.has(b.provider.id) ? at.get(b.provider.id) : order.length + b.index;
+      return ai - bi;
+    })
+    .map((entry) => entry.provider);
+}
+
 
 export function percentLabel(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
