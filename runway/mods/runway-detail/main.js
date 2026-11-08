@@ -1601,7 +1601,7 @@ export default class AgentUsageDetail extends View {
           .flex_1()
           .min_h(0)
           .when(this.managing, (el) => el.h(560))
-          .overflow_y_scrollbar()
+          .overflow_y_scroll()
           .child(body),
       )
       .child(
