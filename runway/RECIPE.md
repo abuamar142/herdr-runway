@@ -172,7 +172,9 @@ Two mods, installed together:
 
 `format.js` lives at `runway/shared/format.js`; `scripts/sync-format.sh`
 copies it into both mod folders because a mod cannot import from outside its
-own folder. Keep the two copies byte-identical.
+own folder. Keep the two copies byte-identical. `scripts/check.sh` verifies
+both shared copies, runs `py_compile`, `unittest`, `node --check` and
+`node --test`; CI runs it on every push.
 
 Provider ids, names, logos, helpers, credential hints and ccusage agents live
 in `runway/shared/providers.js`. `scripts/sync-providers.sh` copies it into
