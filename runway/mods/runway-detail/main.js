@@ -521,7 +521,17 @@ function ccusageCard(provider, t, data) {
           ),
         ),
     )
-    .when(models, (el) => el.child(div().text_color(t.dim).text_size(10).child(`Top: ${models}`)))
+    .when(models, (el) =>
+      el.child(
+        div()
+          .w_full()
+          .truncate()
+          .text_color(t.dim)
+          .text_size(10)
+          .tooltip(models)
+          .child(`Top: ${models}`),
+      ),
+    )
     .when(blockLine, (el) => el.child(div().text_color(t.dim).text_size(10).child(blockLine)));
 }
 
