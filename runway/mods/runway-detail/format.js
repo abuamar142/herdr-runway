@@ -10,6 +10,11 @@ export function keysFile() {
   return `${appHome()}/runway-keys.json`;
 }
 
+// Normalized usage points; no credentials or raw responses.
+export function historyFile() {
+  return `${appHome()}/runway-history.json`;
+}
+
 export const SNAPSHOT = "runway.snapshot";
 export const SETTINGS_KEY = "runway.settings";
 export const ALERTS_KEY = "runway.alerts";

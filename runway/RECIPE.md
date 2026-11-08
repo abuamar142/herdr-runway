@@ -48,6 +48,10 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
     `working` when the current rate runs out before the reset.
 - A blocked provider replaces the cards with a `blocked` card tinted at 10%,
   carrying the error, the action, and the collector's failure detail.
+- A provider with history adds a `History · <window>` card: `24h`/`7d` chips,
+  a 56-bar sparkline, the point count, and `Burn +x.x%/h · projected N% by
+  reset`. With fewer than two points it says `History builds as Runway
+  refreshes.`
 - Footer: `Updated 4:30 PM · next in 4m` (or `manual refresh`) and a Refresh
   button with a 12px glyph that spins while busy.
 
@@ -95,6 +99,12 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   OAuth login keeps using the Console endpoint, so its dollar figures stay.
 - Saving a key for a provider that is off writes the key but skips the read;
   the row says `Saved` and the provider stays hidden.
+- Every successful read appends one normalized point per provider to
+  `~/.config/herdr-app/runway-history.json`: timestamp plus each window's
+  percentage (and the money pool's percentage). Points older than seven days
+  are dropped and each provider keeps at most 2016. Identical points within 90
+  seconds are skipped. The dialog reloads the file on open and every five
+  minutes.
 - Alerts fire once per provider, window and threshold until that window resets.
   A window that crosses 95% sends the critical toast only; the warn threshold
   is marked as already sent. Forecast alerts fire once per window when the
@@ -195,6 +205,10 @@ Shared state:
 - `runway.alerts` — `{ enabled, warn, critical, forecast, reset, snooze_until }`.
 - `runway.bar` — `{ window, mode, hide_unconfigured }`.
 - `runway.order` — provider ids in bar/tab order; absent means snapshot order.
+
+History is not shared state; it is a JSON file at
+`~/.config/herdr-app/runway-history.json`:
+`{ version: 1, providers: { id: [{ t, w: { window: percent }, m? }] } }`.
 - `runway.busy` — boolean
 - `runway.detail.selected` — provider id
 - `runway.enabled` — array of provider ids; absent means all
@@ -283,6 +297,9 @@ a layout; the bar opens it with `openOverlay`.
   result is ignored.
 - The preview is composed from two real screenshots (the dialog and the bar)
   on a clean background; it is not drawn by the mod.
+- History is an honest 0–100% scale, so a 12% window looks nearly flat. It is
+  not auto-scaled to the range. A malformed or unreadable history file is
+  replaced on the next read; the live numbers are unaffected.
 
 ## Done when
 
@@ -314,6 +331,8 @@ a layout; the bar opens it with `openOverlay`.
   repeat on the next refresh.
 - Bar changes the window and density; `Worst` shows one provider and `Critical`
   falls back to the highest when nothing crosses the warn threshold.
+- After two refreshes the History card shows a sparkline and a burn/projection
+  line; `7d` switches the range and the point count changes.
 - The `↑`/`↓` chips reorder the bar and survive a restart.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.

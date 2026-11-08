@@ -36,6 +36,7 @@ import {
   meterPercent,
   moneyMeter,
   moneyPair,
+  historyFile,
   nextRefreshMs,
   orderedProviders,
   pace,
@@ -59,6 +60,7 @@ import {
 } from "./format.js";
 
 const TICK_MS = 60000;
+const HISTORY_TICK_MS = 300000;
 const BAR_MOD = "runway";
 // svg() resolves against the app config dir; the marks live with the bar.
 const ASSETS = "mods/runway";
@@ -338,7 +340,102 @@ function errorCard(provider, t) {
     .children(children);
 }
 
-function section(provider, t) {
+function downsample(points, limit) {
+  if (points.length <= limit) return points;
+  const result = [];
+  const step = (points.length - 1) / (limit - 1);
+  for (let index = 0; index < limit; index += 1) {
+    result.push(points[Math.round(index * step)]);
+  }
+  return result;
+}
+
+function historyCard(provider, t, history, range, onRange) {
+  const primary = primaryWindow(provider);
+  if (!primary) return null;
+  const key = String(primary.key ?? primary.label ?? "window");
+  const all = history?.providers?.[provider.id];
+  const now = Date.now();
+  const span = range === "7d" ? 7 * 86400000 : 24 * 3600000;
+  const points = (Array.isArray(all) ? all : [])
+    .map((point) => ({ t: Number(point.t), p: Number(point.w?.[key]) }))
+    .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.p) && point.t >= now - span)
+    .sort((a, b) => a.t - b.t);
+  const sample = downsample(points, 56);
+  const title = `History · ${WINDOW_NAMES[primary.key] ?? primary.label ?? key}`;
+  const rangeChips = h_flex()
+    .gap(4)
+    .child(chip(t, "runway-history-24h", "24h", range === "24h", (_event, cx) => onRange("24h", cx)))
+    .child(chip(t, "runway-history-7d", "7d", range === "7d", (_event, cx) => onRange("7d", cx)));
+  const header = h_flex()
+    .items_center()
+    .gap(8)
+    .child(div().text_color(t.foreground).font_semibold().child(title))
+    .child(div().flex_1())
+    .children([rangeChips]);
+
+  if (points.length < 2) {
+    return card(t)
+      .gap(6)
+      .child(header)
+      .child(
+        div()
+          .text_color(t.dim)
+          .text_size(11)
+          .child(all?.length ? "No points in this range yet." : "History builds as Runway refreshes."),
+      );
+  }
+
+  const first = points[0];
+  const last = points[points.length - 1];
+  const hours = (last.t - first.t) / 3600000;
+  const rate = hours > 0.05 ? (last.p - first.p) / hours : null;
+  const reset = primary.resets_at ? new Date(primary.resets_at).getTime() : null;
+  const left = reset && reset > now ? (reset - now) / 3600000 : null;
+  const projected = rate !== null && left !== null ? last.p + rate * left : null;
+  const note = [
+    rate !== null ? `Burn ${rate >= 0 ? "+" : ""}${rate.toFixed(1)}%/h` : "",
+    projected !== null ? `projected ${Math.round(projected)}% by reset` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return card(t)
+    .gap(6)
+    .child(header)
+    .child(
+      h_flex()
+        .items_end()
+        .gap(1)
+        .h(30)
+        .children(
+          sample.map((point) =>
+            div()
+              .w(3)
+              .h(Math.max(2, Math.round((Math.max(0, Math.min(100, point.p)) / 100) * 28)))
+              .rounded(1)
+              .bg(barColor(point.p, t)),
+          ),
+        ),
+    )
+    .child(
+      h_flex()
+        .items_center()
+        .gap(8)
+        .child(div().text_color(t.dim).text_size(10.5).child(`${points.length} points`))
+        .child(div().flex_1())
+        .when(note, (el) =>
+          el.child(
+            div()
+              .text_color(projected !== null && projected >= 100 ? t.working : t.dim)
+              .text_size(10.5)
+              .child(note),
+          ),
+        ),
+    );
+}
+
+function section(provider, t, history, range, onRange) {
   const plan = subtitle(provider);
   const children = [
     h_flex()
@@ -401,6 +498,8 @@ function section(provider, t) {
   if (!cards.length && !provider.period_ends_at) {
     children.push(div().text_color(t.dim).child("No reading yet."));
   }
+  const historyView = historyCard(provider, t, history, range, onRange);
+  if (historyView) children.push(historyView);
   const diagnostic = diagnosticLine(provider, t);
   if (diagnostic) children.push(diagnostic);
   return v_flex().w_full().gap(12).children(children);
@@ -416,6 +515,8 @@ export default class AgentUsageDetail extends View {
     this.keyInputs = {};
     this.testing = {};
     this.testResult = {};
+    this.history = { version: 1, providers: {} };
+    this.historyRange = "24h";
     for (const item of CREDENTIALS) {
       const input = InputState.new({ placeholder: item.placeholder });
       input.set_masked(true);
@@ -435,8 +536,30 @@ export default class AgentUsageDetail extends View {
     });
     // Only the countdowns change by the minute; the numbers come from shared.
     cx.timer.every(TICK_MS, (cx) => cx.notify());
+    this.loadHistory(cx);
+    cx.timer.every(HISTORY_TICK_MS, (cx) => this.loadHistory(cx));
     // The keys below only arrive once the dialog holds the keyboard.
     cx.timer.after(80, () => this.focus.focus());
+  }
+
+  async loadHistory(cx) {
+    let text = null;
+    try {
+      text = await readTextFile(historyFile());
+    } catch (_) {
+      text = null;
+    }
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (_) {
+      data = null;
+    }
+    this.history =
+      data && typeof data === "object" && data.providers && typeof data.providers === "object"
+        ? data
+        : { version: 1, providers: {} };
+    cx.notify();
   }
 
   select(id, cx) {
@@ -1189,7 +1312,14 @@ export default class AgentUsageDetail extends View {
         el.child(chip(t, "runway-open-settings", "Choose providers", false, (_event, cx) => this.toggleManaging(cx))),
       );
 
-    const body = this.managing ? manage : current ? section(current, t) : empty;
+    const body = this.managing
+      ? manage
+      : current
+        ? section(current, t, this.history, this.historyRange, (value, cx) => {
+            this.historyRange = value;
+            cx.notify();
+          })
+        : empty;
 
     const status = busy
       ? "Refreshing…"

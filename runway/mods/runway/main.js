@@ -7,7 +7,18 @@
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { appHome, exec, nextCommand, notify, openOverlay, setShared, shared, theme } from "herdr";
+import {
+  appHome,
+  exec,
+  nextCommand,
+  notify,
+  openOverlay,
+  readTextFile,
+  setShared,
+  shared,
+  theme,
+  writeTextFile,
+} from "herdr";
 import {
   BUSY_KEY,
   SELECTED_KEY,
@@ -18,6 +29,7 @@ import {
   barWindow,
   countdown,
   duration,
+  historyFile,
   isUnconfigured,
   keysFile,
   meterPercent,
@@ -292,6 +304,76 @@ export default class AgentUsage extends View {
     this.writeAlertState();
   }
 
+  async recordHistory(records) {
+    const path = historyFile();
+    let current = null;
+    try {
+      current = await readTextFile(path);
+    } catch (_) {
+      current = null;
+    }
+    let data = null;
+    try {
+      data = current ? JSON.parse(current) : null;
+    } catch (_) {
+      data = null;
+    }
+    const history =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? data
+        : { version: 1, providers: {} };
+    if (!history.providers || typeof history.providers !== "object" || Array.isArray(history.providers)) {
+      history.providers = {};
+    }
+    const now = Date.now();
+    for (const provider of records) {
+      if (!provider || provider.error) continue;
+      const point = { t: now, w: {} };
+      for (const meter of Array.isArray(provider.windows) ? provider.windows : []) {
+        const percent = meterPercent(meter);
+        if (percent === null) continue;
+        const key = String(meter.key ?? meter.label ?? "window");
+        point.w[key] = Math.round(percent * 10) / 10;
+      }
+      if (provider.money) {
+        const percent = meterPercent(provider.money);
+        if (percent !== null) point.m = Math.round(percent * 10) / 10;
+      }
+      if (!Object.keys(point.w).length && point.m === undefined) continue;
+      const list = Array.isArray(history.providers[provider.id])
+        ? history.providers[provider.id]
+        : [];
+      const last = list[list.length - 1];
+      if (
+        last &&
+        now - Number(last.t) < 90000 &&
+        JSON.stringify(last.w) === JSON.stringify(point.w) &&
+        last.m === point.m
+      ) {
+        continue;
+      }
+      list.push(point);
+      history.providers[provider.id] = list;
+    }
+    const cutoff = now - 7 * 86400000;
+    for (const [id, list] of Object.entries(history.providers)) {
+      if (!Array.isArray(list)) {
+        delete history.providers[id];
+        continue;
+      }
+      history.providers[id] = list
+        .filter((point) => point && Number(point.t) >= cutoff)
+        .slice(-2016);
+    }
+    const next = `${JSON.stringify(history)}\n`;
+    if (next === current) return;
+    try {
+      await writeTextFile(path, next, current);
+    } catch (_) {
+      // A read-only home keeps the live numbers; only the chart is lost.
+    }
+  }
+
   helper(source) {
     return `${appHome()}/mods/${MOD_DIR}/${source.helper}`;
   }
@@ -491,6 +573,7 @@ export default class AgentUsage extends View {
       setShared(BUSY_KEY, false);
       setShared(SNAPSHOT, { fetched_at: new Date().toISOString(), providers: [...byId.values()] });
       this.checkAlerts();
+      await this.recordHistory([...byId.values()]);
       cx.notify();
     });
   }

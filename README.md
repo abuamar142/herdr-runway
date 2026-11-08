@@ -96,6 +96,9 @@ to the tool's own sign-in. Codex, Antigravity, Kimi and Command Code use
 
 - Click a provider in the bar to open the dialog on its tab. Click `»` for the
   last selected provider.
+- Each provider shows a **History** card for its primary window: 24h or 7d
+  sparkline, burn rate, and the projected end at reset. It builds as Runway
+  refreshes.
 - In the dialog: `←`/`→` step providers, `1`–`9` pick one, `R` refreshes,
   `S` opens settings, `Esc` closes.
 - The gear opens settings: **Providers**, **Credentials**, **Refresh**,
@@ -126,7 +129,9 @@ you save a key in the panel, it is stored in
 written by Runway. **Test** writes the pasted key to a short-lived
 `runway-test-*.json` with mode `600`, asks the helper with `--only-key`, and
 deletes it. Only normalized numbers and the credential source name are written
-to Herdr's shared state.
+to Herdr's shared state. The history file keeps seven days of normalized
+percentages in `~/.config/herdr-app/runway-history.json`; it contains no
+tokens.
 
 Network endpoints:
 
