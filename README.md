@@ -83,9 +83,9 @@ Herdr's shared state and are never logged.
   token from `claude setup-token` or the `accessToken` in
   `~/.claude/.credentials.json`. An `sk-ant-api...` key is rejected before a
   network call.
-- **OpenCode Go** takes an API key (`oc_sk_...` or `sk-...`). Keys read
-  `https://opencode.ai/zen/go/v1/usage`; a local OpenCode OAuth login keeps
-  reading the Console endpoint so its dollar figures stay available.
+- **OpenCode Go** takes an API key (`oc_sk_...` or `sk-...`). API keys and the
+  `auth.json` entry read `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth
+  login keeps reading the Console endpoint so its dollar figures stay available.
 - **Kenari** takes an API key.
 
 The panel's saved key wins over every automatic source. Clear it to fall back

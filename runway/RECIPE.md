@@ -86,9 +86,9 @@ and `Refresh`.
   OAuth login, then `auth.json`, then OMP's `models.yml`, then
   `OPENCODE_GO_API_KEY`. Kenari reads `KENARI_API_KEY`, then
   `~/.kenari/credentials.json`, then `models.yml`.
-- OpenCode keys use `https://opencode.ai/zen/go/v1/usage` and return
-  percentages only. A local OpenCode OAuth login keeps using the Console
-  endpoint, so its dollar figures stay.
+- OpenCode keys and `auth.json` entries use
+  `https://opencode.ai/zen/go/v1/usage` and return percentages only. The SQLite
+  OAuth login keeps using the Console endpoint, so its dollar figures stay.
 - Saving a key for a provider that is off writes the key but skips the read;
   the row says `Saved` and the provider stays hidden.
 - Auto refresh is 5 minutes by default and never below 5. The next read is
