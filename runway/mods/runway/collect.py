@@ -531,7 +531,14 @@ def collect(db_path=None, keys_file=None, only_key=False, key_id=None) -> dict:
         except Unavailable as error:
             error.source = name
             last = error
-            if error.code not in {"expired", "unauthorized", "api_key_expired", "forbidden", "no_plan"}:
+            if error.code not in {
+                "expired",
+                "unauthorized",
+                "api_key_expired",
+                "forbidden",
+                "no_plan",
+                "rate_limited",
+            }:
                 raise
     raise last
 

@@ -431,8 +431,15 @@ def read_credentials(
             raise
         return env_token, None, "CLAUDE_CODE_OAUTH_TOKEN"
 
-    claude = read_claude_file(config_dir)
     stale = None
+    try:
+        claude = read_claude_file(config_dir)
+    except Unavailable as error:
+        if error.code != "credentials_unreadable":
+            raise
+        error.source = "Claude Code credentials"
+        stale = error
+        claude = None
     if claude and not claude["expired"]:
         return claude["token"], claude["plan"], "Claude Code credentials"
     if claude and claude["expired"]:
