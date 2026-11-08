@@ -31,12 +31,14 @@ import {
   barSettings,
   barWindow,
   baseProvider,
+  ccusage,
   clockTime,
   countdown,
   duration,
   isBusy,
   keysFile,
   meterPercent,
+  money,
   moneyMeter,
   moneyPair,
   historyFile,
@@ -77,6 +79,12 @@ const HELPERS = {
   kenari: "collect_kenari.py",
 };
 const PYTHON_HOSTS = ["python", "python3", "py"];
+const CCUSAGE_AGENTS = {
+  claude: "claude",
+  codex: "codex",
+  "opencode-go": "opencode",
+  kimi: "kimi",
+};
 const LOGOS = {
   claude: "claude.svg",
   "opencode-go": "opencode.svg",
@@ -450,7 +458,67 @@ function historyCard(provider, t, history, range, onRange) {
     );
 }
 
-function section(provider, t, history, range, onRange) {
+function compactTokens(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "0";
+  if (number >= 1e9) return `${(number / 1e9).toFixed(1)}B`;
+  if (number >= 1e6) return `${(number / 1e6).toFixed(1)}M`;
+  if (number >= 1e3) return `${(number / 1e3).toFixed(0)}k`;
+  return String(Math.round(number));
+}
+
+function ccusageCard(provider, t, data) {
+  const base = provider.base ?? baseProvider(provider.id);
+  const agentId = CCUSAGE_AGENTS[base];
+  if (!agentId) return null;
+  const agent = data?.agents?.[agentId];
+  if (!agent) return null;
+  const stats = [
+    ["Today", agent.today],
+    ["7d", agent.week],
+    ["30d", agent.month],
+  ].filter(([, bucket]) => bucket && typeof bucket === "object");
+  if (!stats.length) return null;
+  const multi = accountsFor(base, base).length > 1;
+  const models = (Array.isArray(agent.models) ? agent.models : [])
+    .slice(0, 3)
+    .map((model) => `${model.model} ${compactTokens(model.tokens)}`)
+    .join(" · ");
+  const block = agent.block;
+  const blockLine = block
+    ? `5h block ${compactTokens(block.tokens)} · ~${money(block.cost_usd)} · ${block.is_active ? "active" : "ended"}`
+    : null;
+  return card(t)
+    .gap(6)
+    .child(
+      h_flex()
+        .items_center()
+        .gap(8)
+        .child(div().text_color(t.foreground).font_semibold().child("Tokens · API-equivalent"))
+        .child(div().flex_1())
+        .when(multi, (el) => el.child(div().text_color(t.dim).text_size(10).child("all accounts"))),
+    )
+    .child(
+      v_flex()
+        .w_full()
+        .gap(3)
+        .children(
+          stats.map(([label, bucket]) =>
+            h_flex()
+              .items_center()
+              .gap(8)
+              .child(div().w(38).text_color(t.dim).text_size(10.5).child(label))
+              .child(div().text_color(t.foreground).text_size(11).child(`${compactTokens(bucket.tokens)} tokens`))
+              .child(div().flex_1())
+              .child(div().text_color(t.dim).text_size(10.5).child(`~${money(bucket.cost_usd)}`)),
+          ),
+        ),
+    )
+    .when(models, (el) => el.child(div().text_color(t.dim).text_size(10).child(`Top: ${models}`)))
+    .when(blockLine, (el) => el.child(div().text_color(t.dim).text_size(10).child(blockLine)));
+}
+
+function section(provider, t, history, range, onRange, usageData) {
   const plan = subtitle(provider);
   const children = [
     h_flex()
@@ -482,6 +550,8 @@ function section(provider, t, history, range, onRange) {
 
   if (provider.error) {
     children.push(errorCard(provider, t));
+    const usageView = ccusageCard(provider, t, usageData);
+    if (usageView) children.push(usageView);
     return v_flex().w_full().gap(12).children(children);
   }
 
@@ -515,6 +585,8 @@ function section(provider, t, history, range, onRange) {
   }
   const historyView = historyCard(provider, t, history, range, onRange);
   if (historyView) children.push(historyView);
+  const usageView = ccusageCard(provider, t, usageData);
+  if (usageView) children.push(usageView);
   const diagnostic = diagnosticLine(provider, t);
   if (diagnostic) children.push(diagnostic);
   return v_flex().w_full().gap(12).children(children);
@@ -547,6 +619,7 @@ export default class AgentUsageDetail extends View {
     cx.timer.every(TICK_MS, (cx) => cx.notify());
     this.loadHistory(cx);
     cx.timer.every(HISTORY_TICK_MS, (cx) => this.loadHistory(cx));
+    if (barSettings().showTokens) run(`${BAR_MOD}.ccusage`);
     // The keys below only arrive once the dialog holds the keyboard.
     cx.timer.after(80, () => this.focus.focus());
   }
@@ -878,6 +951,7 @@ export default class AgentUsageDetail extends View {
     const current = list.find((provider) => provider.id === selected) ?? null;
     const settings = refreshSettings();
     const alerts = alertsSettings();
+    const usageData = bar.showTokens ? ccusage() : null;
     const fetched = snapshot()?.fetched_at;
     const busy = isBusy();
     const next = nextRefreshMs(settings, fetched);
@@ -1486,6 +1560,26 @@ export default class AgentUsageDetail extends View {
                   cx.notify();
                 })),
             ),
+          )
+          .child(
+            row(
+              "tokens",
+              "Token estimates",
+              usageData?.error
+                ? String(usageData.error)
+                : "ccusage tokens and API-equivalent cost; all accounts.",
+              h_flex()
+                .gap(6)
+                .child(chip(t, "runway-bar-tokens-on", "On", bar.showTokens, (_event, cx) => {
+                  setBarSettings({ showTokens: true });
+                  run(`${BAR_MOD}.ccusage`);
+                  cx.notify();
+                }))
+                .child(chip(t, "runway-bar-tokens-off", "Off", !bar.showTokens, (_event, cx) => {
+                  setBarSettings({ showTokens: false });
+                  cx.notify();
+                })),
+            ),
           ),
       );
     })();
@@ -1522,7 +1616,7 @@ export default class AgentUsageDetail extends View {
         ? section(current, t, this.history, this.historyRange, (value, cx) => {
             this.historyRange = value;
             cx.notify();
-          })
+          }, usageData)
         : empty;
 
     const status = busy

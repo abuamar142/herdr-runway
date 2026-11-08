@@ -22,6 +22,7 @@ import {
 } from "herdr";
 import {
   BUSY_KEY,
+  CCUSAGE_KEY,
   SELECTED_KEY,
   SNAPSHOT,
   accountsFor,
@@ -50,6 +51,7 @@ import {
 } from "./format.js";
 
 const TICK_MS = 60000;
+const CCUSAGE_TICK_MS = 15 * 60000;
 const SOURCE_TIMEOUT_MS = 25000;
 const HOSTS = ["python", "python3", "py"];
 const TITLE = "Runway";
@@ -228,6 +230,8 @@ export default class AgentUsage extends View {
     this.host = null;
     this.lastSourceRefresh = new Map();
     this.overlayId = null;
+    this.ccusageBusy = false;
+    this.lastCcusage = 0;
     this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
     this.refresh(cx);
@@ -235,10 +239,13 @@ export default class AgentUsage extends View {
       cx.notify();
       this.maybeRefresh(cx);
     });
+    cx.timer.after(1200, (cx) => this.refreshCcusage(cx));
+    cx.timer.every(CCUSAGE_TICK_MS, (cx) => this.refreshCcusage(cx));
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
         if (command === "refresh") this.refresh(cx);
+        if (command === "ccusage") this.refreshCcusage(cx);
         if (command === "notify") cx.notify();
         if (command === "details" || command === "toggle") this.openDetails();
       }
@@ -408,6 +415,40 @@ export default class AgentUsage extends View {
     } catch (_) {
       // A read-only home keeps the live numbers; only the chart is lost.
     }
+  }
+
+  refreshCcusage(cx) {
+    if (this.ccusageBusy || !barSettings().showTokens) return;
+    this.ccusageBusy = true;
+    cx.spawn(async (cx) => {
+      let data;
+      try {
+        const result = await this.runHelper({ id: "ccusage", helper: "collect_ccusage.py" });
+        const text = (result?.stdout ?? "").trim();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch (_) {
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("ccusage returned no readable JSON.");
+        }
+        data = { fetched_at: new Date().toISOString(), ...parsed };
+      } catch (error) {
+        data = {
+          fetched_at: new Date().toISOString(),
+          agents: {},
+          error: "ccusage could not be read.",
+          code: "reader_error",
+          failure: String(error?.message ?? error).slice(0, 400),
+        };
+      }
+      setShared(CCUSAGE_KEY, data);
+      this.ccusageBusy = false;
+      this.lastCcusage = Date.now();
+      cx.notify();
+    });
   }
 
   helper(source) {
@@ -643,6 +684,7 @@ export default class AgentUsage extends View {
       } catch (_) {
         // A history failure must not keep the bar busy.
       }
+      this.refreshCcusage(cx);
       cx.notify();
     });
   }

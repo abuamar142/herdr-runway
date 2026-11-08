@@ -53,6 +53,10 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   a 56-bar sparkline, the point count, and `Burn +x.x%/h · projected N% by
   reset`. With fewer than two points it says `History builds as Runway
   refreshes.`
+- Claude, Codex, OpenCode and Kimi add a `Tokens · API-equivalent` card when
+  ccusage has data: `Today`/`7d`/`30d` token and cost rows, up to three top
+  models, and Claude's latest `5h block` with active/ended. With multiple
+  accounts it says `all accounts`.
 - Footer: `Updated 4:30 PM · next in 4m` (or `manual refresh`) and a Refresh
   button with a 12px glyph that spins while busy.
 
@@ -76,7 +80,7 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - `Alerts`, with rows for Notifications On/Off, Warn at 75/80/90, Critical at
   90/95/100, Forecast On/Off, Window reset On/Off, Snooze 1h, and Send test.
 - `Bar`, with Window chips `Primary 5h Week Month Worst`, Show chips
-  `All Critical Worst`, and Hide unconfigured On/Off.
+  `All Critical Worst`, Hide unconfigured On/Off, and Token estimates On/Off.
 
 ## How it behaves
 
@@ -114,6 +118,11 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   OAuth login keeps using the Console endpoint, so its dollar figures stay.
 - Saving a key for a provider that is off writes the key but skips the read;
   the row says `Saved` and the provider stays hidden.
+- ccusage runs separately from the quota read: on start, after every quota
+  refresh, and every 15 minutes. It never sets `runway.busy`, so a slow
+  ccusage cannot hold the bar. Missing ccusage or a failed run is stored as
+  `runway.ccusage.error` and hides the card; the quota numbers stay. Token
+  estimates can be turned off in Bar.
 - Every successful read appends one normalized point per provider to
   `~/.config/herdr-app/runway-history.json`: timestamp plus each window's
   percentage (and the money pool's percentage). Points older than seven days
@@ -176,6 +185,10 @@ provider account (and one quota-axi call for its four providers):
   `OPENCODE_GO_API_KEY`. API keys call
   `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth login calls
   `https://opencode.ai/console/api/go/status`.
+- `collect_ccusage.py` — runs `ccusage daily --json --offline --by-agent
+  --since <30d>` and `ccusage blocks --json --offline`, then prints per-agent
+  totals and Claude's latest block. It is optional; a missing binary is a
+  readable error, not a quota failure.
 - `collect_kenari.py` — reads a saved key, `KENARI_API_KEY`,
   `~/.kenari/credentials.json`, or the `kenari` block in
   `~/.omp/agent/models.yml`; calls `https://kenari.id/v1` (or
@@ -222,6 +235,10 @@ Shared state:
 - `runway.alerts` — `{ enabled, warn, critical, forecast, reset, snooze_until }`.
 - `runway.bar` — `{ window, mode, hide_unconfigured }`.
 - `runway.order` — provider ids in bar/tab order; absent means snapshot order.
+- `runway.ccusage` — `{ fetched_at, agents, error?, code?, failure? }`.
+  `agents` is keyed by ccusage agent (`claude`, `codex`, `opencode`, `kimi`,
+  ...); each has `today`, `week`, `month` (`tokens`, `cost_usd`), `models[]`,
+  and Claude may have `block`.
 - `runway.accounts` — extra accounts keyed by base provider:
   `{ claude: [{ id: "claude:work", label: "Work" }] }`. The default account
   (`claude`) is implicit. Snapshot records carry `base` and `account`.
@@ -298,6 +315,12 @@ a layout; the bar opens it with `openOverlay`.
   it. `chmod` is skipped on Windows, where the profile ACL applies. The Test
   temp file is mode `600` and is deleted in `finally`, even when the helper
   fails.
+- ccusage cost is an API-price estimate, not the subscription bill. `--offline`
+  uses cached pricing, so unknown models can show `$0.00`. ccusage knows
+  agents, not Runway account instances; multi-account cards say `all accounts`.
+- `ccusage opencode` can be empty even when the OpenCode quota API has data;
+  the card is hidden for that provider. Kenari, Antigravity and Command Code
+  have no ccusage agent.
 - Extra accounts are only for the three key providers. `quota-axi` owns the
   other four sign-ins, so they have no `+ Account`; adding a fake account
   would only duplicate one result.
@@ -362,6 +385,9 @@ a layout; the bar opens it with `openOverlay`.
   falls back to the highest when nothing crosses the warn threshold.
 - After two refreshes the History card shows a sparkline and a burn/projection
   line; `7d` switches the range and the point count changes.
+- With ccusage installed, Claude/Codex shows a Tokens card with Today/7d/30d,
+  top models, and Claude's 5h block. Token estimates Off hides it and stops
+  the scheduled ccusage read.
 - The `↑`/`↓` chips reorder the bar and survive a restart.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.

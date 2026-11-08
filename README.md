@@ -101,6 +101,10 @@ one account, and have no key field.
 - Each provider shows a **History** card for its primary window: 24h or 7d
   sparkline, burn rate, and the projected end at reset. It builds as Runway
   refreshes.
+- Claude, Codex, OpenCode and Kimi also show a **Tokens** card when
+  [ccusage](https://github.com/ryoppippi/ccusage) is installed: today/7d/30d
+  tokens, API-equivalent cost, top models, and Claude's latest 5-hour block.
+  These are ccusage agent totals for all accounts, not a subscription bill.
 - In the dialog: `←`/`→` step providers, `1`–`9` pick one, `R` refreshes,
   `S` opens settings, `Esc` closes.
 - The gear opens settings: **Providers**, **Credentials**, **Refresh**,
@@ -116,8 +120,8 @@ one account, and have no key field.
 - Alerts: choose warn/critical percentages, forecast and reset toasts, or
   snooze for an hour. **Send test** posts one toast.
 - Bar: choose which window the bar reads (`Primary`, `5h`, `Week`, `Month`,
-  `Worst`), whether it shows `All`, `Critical` or `Worst`, and whether to hide
-  providers with no credential.
+  `Worst`), whether it shows `All`, `Critical` or `Worst`, whether to hide
+  providers with no credential, and whether to show ccusage token estimates.
 - Providers: the `↑`/`↓` chips reorder the bar and tabs; the order survives a
   restart. The interval chip cycles Auto/5/10/15/30/60 minutes.
 - Off providers are not read at all. Their last record stays as a placeholder
@@ -137,7 +141,8 @@ written by Runway. **Test** writes the pasted key to a short-lived
 deletes it. Only normalized numbers and the credential source name are written
 to Herdr's shared state. The history file keeps seven days of normalized
 percentages in `~/.config/herdr-app/runway-history.json`; it contains no
-tokens.
+tokens. ccusage is optional and is run with `--offline`; it reads local agent
+logs and cached pricing, not credentials.
 
 Network endpoints:
 
