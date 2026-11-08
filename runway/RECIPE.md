@@ -238,7 +238,8 @@ Shared state:
 - `runway.ccusage` — `{ fetched_at, agents, error?, code?, failure? }`.
   `agents` is keyed by ccusage agent (`claude`, `codex`, `opencode`, `kimi`,
   ...); each has `today`, `week`, `month` (`tokens`, `cost_usd`), `models[]`,
-  and Claude may have `block`.
+  and Claude may have `block`. Shared state therefore also carries agent and
+  model names, not only numbers.
 - `runway.accounts` — extra accounts keyed by base provider:
   `{ claude: [{ id: "claude:work", label: "Work" }] }`. The default account
   (`claude`) is implicit. Snapshot records carry `base` and `account`.

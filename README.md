@@ -5,7 +5,7 @@ the bottom of [Herdr](https://herdr.dev).
 
 ![Runway](runway/preview.png)
 
-Runway is a Herdr mod. The bar shows one item per enabled provider; the dialog
+Runway is a Herdr mod. The bar shows the enabled providers, or only the critical/worst ones when Bar settings ask for that; the dialog
 shows every window, a pace tick, and a forecast when the current rate runs out
 before the reset.
 
@@ -138,11 +138,12 @@ you save a key in the panel, it is stored in
 `~/.config/herdr-app/runway-keys.json` with mode `600`; otherwise nothing is
 written by Runway. **Test** writes the pasted key to a short-lived
 `runway-test-*.json` with mode `600`, asks the helper with `--only-key`, and
-deletes it. Only normalized numbers and the credential source name are written
-to Herdr's shared state. The history file keeps seven days of normalized
-percentages in `~/.config/herdr-app/runway-history.json`; it contains no
-tokens. ccusage is optional and is run with `--offline`; it reads local agent
-logs and cached pricing, not credentials.
+deletes it. Only normalized numbers, provider/agent/model names, and the
+credential source name are written to Herdr's shared state. The history file
+keeps seven days of normalized percentages in
+`~/.config/herdr-app/runway-history.json`; it contains no tokens. ccusage is
+optional and is run with `--offline`; it reads local agent logs and cached
+pricing, not credentials.
 
 Network endpoints:
 
