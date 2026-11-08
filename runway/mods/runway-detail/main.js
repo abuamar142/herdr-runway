@@ -63,6 +63,7 @@ import {
   tint,
   usageColor,
   windowLabel,
+  windowSpan,
 } from "./format.js";
 
 const TICK_MS = 60000;
@@ -409,16 +410,22 @@ function historyCard(provider, t, history, range, onRange) {
       );
   }
 
-  const first = points[0];
-  const last = points[points.length - 1];
-  const hours = (last.t - first.t) / 3600000;
-  const rate = hours > 0.05 ? (last.p - first.p) / hours : null;
   const reset = primary.resets_at ? new Date(primary.resets_at).getTime() : null;
+  const windowLength = windowSpan(primary.key);
+  const windowStart = reset && windowLength ? reset - windowLength : null;
+  const windowPoints =
+    windowStart === null ? points : points.filter((point) => point.t >= windowStart);
+  const first = windowPoints[0];
+  const last = windowPoints[windowPoints.length - 1];
+  const hours = first && last ? (last.t - first.t) / 3600000 : 0;
+  const rate = hours > 0.05 ? (last.p - first.p) / hours : null;
   const left = reset && reset > now ? (reset - now) / 3600000 : null;
-  const projected = rate !== null && left !== null ? last.p + rate * left : null;
+  const projected = rate !== null && left !== null ? Math.max(0, last.p + rate * left) : null;
+  const projectedLabel =
+    projected === null ? "" : projected > 100 ? ">100%" : `${Math.round(projected)}%`;
   const note = [
     rate !== null ? `Burn ${rate >= 0 ? "+" : ""}${rate.toFixed(1)}%/h` : "",
-    projected !== null ? `projected ${Math.round(projected)}% by reset` : "",
+    projected !== null ? `projected ${projectedLabel} by reset` : "",
   ]
     .filter(Boolean)
     .join(" · ");

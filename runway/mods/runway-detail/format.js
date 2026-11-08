@@ -456,6 +456,11 @@ const SPANS = {
   month: 30 * 86400000,
 };
 
+// The nominal length of a window, when the key names one we know.
+export function windowSpan(key) {
+  return SPANS[key] ?? null;
+}
+
 // Where time stands in a window, against where usage stands. `elapsed` is a
 // percentage; `runout` is how long until 100% at the current rate, only when
 // that lands before the window resets. A month is taken as 30 days.
