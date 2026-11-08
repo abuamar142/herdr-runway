@@ -170,8 +170,9 @@ Two mods, installed together:
   the bar's. `mod.json` is
   `{ "place": "none", "size": 28, "overlay": { "width": 520 } }`.
 
-`format.js` is duplicated because a mod cannot import from outside its own
-folder. Keep the two copies byte-identical.
+`format.js` lives at `runway/shared/format.js`; `scripts/sync-format.sh`
+copies it into both mod folders because a mod cannot import from outside its
+own folder. Keep the two copies byte-identical.
 
 Provider ids, names, logos, helpers, credential hints and ccusage agents live
 in `runway/shared/providers.js`. `scripts/sync-providers.sh` copies it into
