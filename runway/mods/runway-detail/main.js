@@ -1718,6 +1718,9 @@ export default class AgentUsageDetail extends View {
           .border_color(t.border)
           .child(div().text_color(t.dim).text_size(11).child(status))
           .child(div().flex_1())
+          .when(this.managing, (el) =>
+            el.child(div().text_color(t.dim).text_size(10).tooltip("Scroll for more").child("↕ scroll")),
+          )
           .child(
             h_flex()
               .id("runway-detail-refresh")
