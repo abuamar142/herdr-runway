@@ -163,9 +163,11 @@ Two mods, installed together:
   schedule, the collectors, and the bar. `format.js` holds the shared
   formatting, pace math, and settings helpers. `mod.json` is
   `{ "place": "none", "size": 28 }`.
-- `mods/runway-detail/` — the dialog. `main.js` draws the tabs, cards,
-  settings, and keyboard handling; its own `format.js` copy must stay
-  identical to the bar's. `mod.json` is
+- `mods/runway-detail/` — the dialog. `main.js` owns state, keyboard handling
+  and composition; `cards.js` draws window/history/token cards; `settings.js`
+  draws Providers/Credentials/Refresh/Alerts/Bar; `metadata.js` derives lookup
+  tables from `providers.js`. Its own `format.js` copy must stay identical to
+  the bar's. `mod.json` is
   `{ "place": "none", "size": 28, "overlay": { "width": 520 } }`.
 
 `format.js` is duplicated because a mod cannot import from outside its own
@@ -174,7 +176,9 @@ folder. Keep the two copies byte-identical.
 Provider ids, names, logos, helpers, credential hints and ccusage agents live
 in `runway/shared/providers.js`. `scripts/sync-providers.sh` copies it into
 both mod folders because a Herdr mod cannot import outside its own folder; the
-two copies must stay byte-identical.
+two copies must stay byte-identical. The dialog derives `LOGOS`,
+`SHORT_NAMES`, `HELPERS`, `CREDENTIAL_BASES` and `CCUSAGE_AGENTS` from that
+file in `metadata.js`.
 
 The bar reads providers with `exec` on `python`/`python3`/`py`, one helper per
 provider account (and one quota-axi call for its four providers):
