@@ -16,8 +16,8 @@ export function historyFile() {
 }
 
 export const SNAPSHOT = "runway.snapshot";
-export const SETTINGS_KEY = "runway.settings";
-export const ALERTS_KEY = "runway.alerts";
+const SETTINGS_KEY = "runway.settings";
+const ALERTS_KEY = "runway.alerts";
 export const CCUSAGE_KEY = "runway.ccusage";
 export const BUSY_KEY = "runway.busy";
 // The provider the dialog opens on; the bar writes it when a provider is clicked.
@@ -283,7 +283,7 @@ export function baseProvider(id) {
   return at > 0 ? text.slice(0, at) : text;
 }
 
-export function providerOrder() {
+function providerOrder() {
   const value = shared(ORDER_KEY);
   return Array.isArray(value) ? value.map(String) : [];
 }
@@ -359,7 +359,7 @@ export function money(value) {
   return `${value < 0 ? "-" : ""}$${grouped}.${cents}`;
 }
 
-export function moneyPercent(pool) {
+function moneyPercent(pool) {
   if (!pool) return null;
   if (typeof pool.percent === "number" && Number.isFinite(pool.percent)) return pool.percent;
   const used = pool.used_usd;
@@ -410,13 +410,6 @@ export function countdown(iso, now = Date.now()) {
   const at = new Date(iso).getTime();
   if (!Number.isFinite(at)) return "no reset time";
   return at - now < 60000 ? "reset pending" : duration(at - now);
-}
-
-export function ago(iso, now = Date.now()) {
-  const at = new Date(iso).getTime();
-  if (!Number.isFinite(at)) return "";
-  const ms = now - at;
-  return ms < 60000 ? "just now" : `${duration(ms)} ago`;
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

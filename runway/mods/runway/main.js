@@ -231,7 +231,6 @@ export default class AgentUsage extends View {
     this.lastSourceRefresh = new Map();
     this.overlayId = null;
     this.ccusageBusy = false;
-    this.lastCcusage = 0;
     this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
     this.refresh(cx);
@@ -446,7 +445,6 @@ export default class AgentUsage extends View {
       }
       setShared(CCUSAGE_KEY, data);
       this.ccusageBusy = false;
-      this.lastCcusage = Date.now();
       cx.notify();
     });
   }
