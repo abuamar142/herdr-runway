@@ -23,6 +23,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from runway_keys import read_key as read_runway_key
+
 BASE_URL = (os.environ.get("KENARI_BASE_URL") or "https://kenari.id/v1").rstrip("/")
 PROVIDER = "kenari"
 TITLE = "Kenari"
@@ -83,7 +85,11 @@ def _stamp(resets_at) -> str:
     return when.strftime("%Y-%m-%d %H:%MZ") if when else "unknown"
 
 
-def read_key() -> str:
+def read_key(keys_file=None) -> str:
+    key = read_runway_key(keys_file, PROVIDER)
+    if key:
+        return key
+
     key = _text(os.environ.get("KENARI_API_KEY"))
     if key:
         return key
@@ -117,7 +123,7 @@ def read_key() -> str:
     raise Unavailable(
         "No Kenari API key was found.",
         "not_signed_in",
-        "Run `kenari login`, or set KENARI_API_KEY / the kenari apiKey in ~/.omp/agent/models.yml.",
+        "Paste a key in Runway Settings → Credentials, run `kenari login`, or set KENARI_API_KEY / the kenari apiKey in ~/.omp/agent/models.yml.",
     )
 
 
@@ -135,7 +141,11 @@ def request_json(url: str, key: str) -> dict:
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
         if error.code == 401:
-            raise Unavailable("Kenari rejected the API key.", "unauthorized", "Run `kenari login` again.") from None
+            raise Unavailable(
+                "Kenari rejected the API key.",
+                "unauthorized",
+                "Paste a new key in Runway Settings → Credentials, or run `kenari login` again.",
+            ) from None
         if error.code == 403:
             raise Unavailable(
                 "This Kenari key cannot read account quota.",
@@ -227,9 +237,15 @@ def render_text(record: dict) -> str:
 
 
 def main() -> int:
-    want_json = "--json" in sys.argv[1:]
+    argv = sys.argv[1:]
+    want_json = "--json" in argv
+    keys_file = None
+    if "--keys-file" in argv:
+        index = argv.index("--keys-file")
+        if index + 1 < len(argv):
+            keys_file = argv[index + 1]
     try:
-        key = read_key()
+        key = read_key(keys_file)
         quota = request_json(f"{BASE_URL}/account/quota", key)
         record = normalize(quota)
     except Unavailable as error:

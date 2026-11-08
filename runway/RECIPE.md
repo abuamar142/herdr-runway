@@ -51,12 +51,18 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Footer: `Updated 4:30 PM · next in 4m` (or `manual refresh`) and a Refresh
   button with a 12px glyph that spins while busy.
 
-**Settings** replaces the body with:
+**Settings** replaces the body with three tabs: `Providers`, `Credentials`
+and `Refresh`.
 
 - `Providers`, with one row per known provider: mark, name, plan, current
   reading, and a 34×20px switch. Off rows are dimmed.
-- `Auto refresh`, with chips `5m 10m 15m 30m 60m | Manual`. The active chip has
-  an `accent` border and an 18% `accent` fill. The hint reads
+- `Credentials`, with one row for Claude Code, OpenCode Go and Kenari. Each row
+  has a 16px mark, the name, a one-line hint, a `Saved`/`Not set` status, a
+  30px masked input, and `Show`, `Save` and (when saved) `Clear`. A footnote
+  says Codex, Antigravity, Kimi and Command Code use `quota-axi` sign-in, and
+  names the key file.
+- `Refresh`, with chips `5m 10m 15m 30m 60m | Manual`. The active chip has an
+  `accent` border and an 18% `accent` fill. The hint reads
   `Every 5 minutes · next in 3m` or `Reads only when you press Refresh.`
 
 ## How it behaves
@@ -70,6 +76,21 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   Hovering the pace tick says how much of the window has passed.
 - The Refresh button runs the same read as the bar's refresh glyph. A read
   updates the snapshot, clears the busy flag, and re-renders every mod.
+- Saving a credential writes `~/.config/herdr-app/runway-keys.json` with mode
+  `600`, clears the input, marks the row `Saved`, and runs one refresh.
+  Clearing deletes that provider's entry and runs one refresh; the collector
+  falls back to the tool's own sign-in.
+- A saved key overrides every automatic source. With no saved key, Claude
+  reads `CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's credential file, then an
+  OAuth `anthropic` entry in OpenCode's `auth.json`. OpenCode reads its SQLite
+  OAuth login, then `auth.json`, then OMP's `models.yml`, then
+  `OPENCODE_GO_API_KEY`. Kenari reads `KENARI_API_KEY`, then
+  `~/.kenari/credentials.json`, then `models.yml`.
+- OpenCode keys use `https://opencode.ai/zen/go/v1/usage` and return
+  percentages only. A local OpenCode OAuth login keeps using the Console
+  endpoint, so its dollar figures stay.
+- Saving a key for a provider that is off writes the key but skips the read;
+  the row says `Saved` and the provider stays hidden.
 - Auto refresh is 5 minutes by default and never below 5. The next read is
   scheduled from the snapshot's `fetched_at`, so a manual read postpones it.
   `Manual` disables periodic reads; the dialog still refreshes on demand.
@@ -101,14 +122,20 @@ folder. Keep the two copies byte-identical.
 The bar reads providers with `exec` on `python`/`python3`/`py`, one helper per
 source:
 
-- `collect_claude.py` — reads Claude Code's OAuth token from its config
-  directory and calls `https://api.anthropic.com/api/oauth/usage`.
-- `collect.py` — reads the active OpenCode Console credential from OpenCode's
-  SQLite `credential` table and calls
+- `runway_keys.py` — reads one provider's entry from Runway's key file; a
+  missing or malformed file is not an error.
+- `collect_claude.py` — reads a saved token, `CLAUDE_CODE_OAUTH_TOKEN`, Claude
+  Code's `.credentials.json`, or an OAuth `anthropic` entry in OpenCode's
+  `auth.json`; calls `https://api.anthropic.com/api/oauth/usage`.
+- `collect.py` — reads a saved key, OpenCode's SQLite `credential` table,
+  `~/.local/share/opencode/auth.json`, `~/.omp/agent/models.yml`, or
+  `OPENCODE_GO_API_KEY`. API keys call
+  `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth login calls
   `https://opencode.ai/console/api/go/status`.
-- `collect_kenari.py` — reads `KENARI_API_KEY`, `~/.kenari/credentials.json`,
-  or the `kenari` block in `~/.omp/agent/models.yml`, and calls
-  `https://kenari.id/v1` (or `KENARI_BASE_URL`).
+- `collect_kenari.py` — reads a saved key, `KENARI_API_KEY`,
+  `~/.kenari/credentials.json`, or the `kenari` block in
+  `~/.omp/agent/models.yml`; calls `https://kenari.id/v1` (or
+  `KENARI_BASE_URL`).
 - `collect_quota_axi.py` — runs `quota-axi` (or `npx -y quota-axi`) with
   `--provider codex,agy,kimi,commandcode --json`, filtered to the enabled
   providers.
@@ -120,9 +147,24 @@ code, action, failure }`. The bar normalizes that to
 failure }`.
 
 Herdr functions used: `shared`, `setShared`, `exec`, `appHome`, `openOverlay`,
-`closeOverlay`, `props`, `run`, `nextCommand`, `theme`. GPUI pieces:
-`View`, `div`, `svg`, `h_flex`, `v_flex`, `cx.timer`, `cx.spawn`,
-`cx.focus_handle`, `track_focus`, `on_key_down`.
+`closeOverlay`, `props`, `run`, `nextCommand`, `theme`, `readTextFile`,
+`writeTextFile`, `notify`. GPUI pieces: `View`, `div`, `svg`, `h_flex`,
+`v_flex`, `Input`, `InputState`, `cx.timer`, `cx.spawn`, `cx.focus_handle`,
+`track_focus`, `on_key_down`.
+
+The credential file is:
+
+```json
+{
+  "claude": "eyJ...",
+  "opencode-go": "oc_sk_...",
+  "kenari": "sk-..."
+}
+```
+
+It lives outside the mod folders, so a mod update never overwrites it. The bar
+passes `--keys-file <path>` to the three helpers that accept it; keys never
+appear in argv or shared state.
 
 Shared state:
 
@@ -189,9 +231,21 @@ a layout; the bar opens it with `openOverlay`.
 - Claude's usage endpoint can rate-limit repeated reads. The 5-minute default
   and `Manual` exist for that. A rate-limited read is an error card, not stale
   numbers.
-- The collectors read local credentials. They never print or store tokens, but
-  they do reach the network: Anthropic, OpenCode, Kenari, and `npx` for
-  `quota-axi`. Say so before installing.
+- The collectors read local credentials. They never print tokens, but they do
+  reach the network: Anthropic, OpenCode, Kenari, and `npx` for `quota-axi`.
+  Say so before installing.
+- A saved key is plaintext on disk with mode `600`, like
+  `~/.kenari/credentials.json`. Anyone who can read the user's home can read
+  it. `chmod` is skipped on Windows, where the profile ACL applies.
+- Claude's field is an **OAuth token**, not an Anthropic API key. The collector
+  rejects `sk-ant-api...` before a request; subscription usage cannot be read
+  with an API key.
+- OpenCode's `auth.json` can hold an expired key while the SQLite OAuth login
+  still works. The collector tries SQLite first, then `auth.json`, so an
+  expired saved key does not hide a working login. A saved Runway key is
+  explicit and wins; if it is expired the row shows `api_key_expired`.
+- Codex, Antigravity, Kimi and Command Code have no key field because
+  `quota-axi` owns their auth. A raw key pasted for them would not be used.
 - `quota-axi` is optional. Without it, Codex, Antigravity, Kimi and Command Code
   show their sign-in/install errors; Claude, OpenCode and Kenari still work.
 - The busy flag lives in shared state. If the bar is killed mid-read, the next
@@ -213,6 +267,11 @@ a layout; the bar opens it with `openOverlay`.
   pace tick; a window on track to run out shows `Limit in ~… at this pace`.
 - Settings opens from the gear, switches a provider off, and the bar loses that
   item. A read while it is off does not run that provider's collector.
+- Credentials shows three rows; saving a key marks it `Saved`, writes
+  `~/.config/herdr-app/runway-keys.json` with mode `600`, and refreshes that
+  provider. Clearing removes the entry and returns to automatic detection.
+- A Claude `sk-ant-api...` value is rejected as the wrong credential type. An
+  expired OpenCode key reports `api_key_expired` with the Console action.
 - Turning it back on runs one read and restores the item.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
 - A provider with a bad credential shows `!` in the bar and an error card in

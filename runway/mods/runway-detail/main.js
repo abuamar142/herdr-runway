@@ -7,8 +7,19 @@
 // It reads the same shared snapshot as the bar.
 
 import { View, div, svg } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
-import { closeOverlay, props, run, setShared, shared, theme } from "herdr";
+import { Input, InputState, h_flex, v_flex } from "gpui-base";
+import {
+  closeOverlay,
+  exec,
+  notify,
+  props,
+  readTextFile,
+  run,
+  setShared,
+  shared,
+  theme,
+  writeTextFile,
+} from "herdr";
 import {
   SELECTED_KEY,
   barColor,
@@ -16,6 +27,7 @@ import {
   countdown,
   duration,
   isBusy,
+  keysFile,
   meterPercent,
   moneyMeter,
   moneyPair,
@@ -59,6 +71,26 @@ const SHORT_NAMES = {
   kimi: "Kimi",
   commandcode: "Cmd",
 };
+const CREDENTIALS = [
+  {
+    id: "claude",
+    name: "Claude Code",
+    hint: "OAuth token, not an Anthropic API key",
+    placeholder: "Paste Claude Code OAuth token",
+  },
+  {
+    id: "opencode-go",
+    name: "OpenCode Go",
+    hint: "API key (oc_sk_... or sk-...)",
+    placeholder: "Paste OpenCode Go API key",
+  },
+  {
+    id: "kenari",
+    name: "Kenari",
+    hint: "API key",
+    placeholder: "Paste Kenari API key",
+  },
+];
 const WINDOW_NAMES = {
   five_hour: "5-hour",
   fiveHour: "5-hour",
@@ -87,6 +119,27 @@ function visibleProviders() {
 function pick(list) {
   const chosen = selectedProvider();
   return list.some((provider) => provider.id === chosen) ? chosen : list[0]?.id ?? null;
+}
+
+function parseKeys(text) {
+  if (!text) return {};
+  try {
+    const data = JSON.parse(text);
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+async function writeKeys(data, expected) {
+  const path = keysFile();
+  await writeTextFile(path, `${JSON.stringify(data, null, 2)}\n`, expected);
+  // chmod is POSIX-only; a Windows profile ACL already limits the file.
+  try {
+    await exec("chmod", ["600", path]);
+  } catch (_) {
+    // The key is saved; only the mode hint failed.
+  }
 }
 
 function subtitle(provider) {
@@ -325,7 +378,28 @@ function section(provider, t) {
 export default class AgentUsageDetail extends View {
   init(_given, cx) {
     this.managing = false;
+    this.settingsTab = "providers";
     this.focus = cx.focus_handle();
+    this.savedKeys = new Set();
+    this.keyVisible = {};
+    this.keyInputs = {};
+    for (const item of CREDENTIALS) {
+      const input = InputState.new({ placeholder: item.placeholder });
+      input.set_masked(true);
+      input.on("submit", (_event, cx) => this.saveKey(item.id, cx));
+      input.on("change", (_event, cx) => cx.notify());
+      this.keyInputs[item.id] = input;
+      this.keyVisible[item.id] = false;
+    }
+    cx.spawn(async (cx) => {
+      const text = await readTextFile(keysFile()).catch(() => null);
+      this.savedKeys = new Set(
+        Object.entries(parseKeys(text))
+          .filter(([, value]) => typeof value === "string" && value.trim())
+          .map(([id]) => id),
+      );
+      cx.notify();
+    });
     // Only the countdowns change by the minute; the numbers come from shared.
     cx.timer.every(TICK_MS, (cx) => cx.notify());
     // The keys below only arrive once the dialog holds the keyboard.
@@ -346,6 +420,81 @@ export default class AgentUsageDetail extends View {
 
   toggleManaging(cx) {
     this.managing = !this.managing;
+    cx.notify();
+  }
+
+  setSettingsTab(tab, cx) {
+    this.settingsTab = tab;
+    cx.notify();
+  }
+
+  saveKey(id, cx) {
+    const input = this.keyInputs[id];
+    const value = (input.value() ?? "").trim();
+    if (!value) {
+      notify({ title: "Key is empty", body: "Paste a key first.", level: "warning" });
+      return;
+    }
+    cx.spawn(async (cx) => {
+      try {
+        const path = keysFile();
+        const current = await readTextFile(path);
+        const data = parseKeys(current);
+        data[id] = value;
+        await writeKeys(data, current);
+        this.savedKeys.add(id);
+        input.replace("");
+        input.set_masked(true);
+        this.keyVisible[id] = false;
+        notify({
+          title: "Key saved",
+          body: "Runway will use it on the next refresh.",
+          level: "success",
+        });
+        run(`${BAR_MOD}.refresh`);
+        cx.notify();
+      } catch (error) {
+        notify({
+          title: "Could not save the key",
+          body: String(error?.message ?? error),
+          level: "error",
+        });
+      }
+    });
+  }
+
+  clearKey(id, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const path = keysFile();
+        const current = await readTextFile(path);
+        const data = parseKeys(current);
+        delete data[id];
+        await writeKeys(data, current);
+        this.savedKeys.delete(id);
+        this.keyInputs[id].replace("");
+        this.keyInputs[id].set_masked(true);
+        this.keyVisible[id] = false;
+        notify({
+          title: "Key cleared",
+          body: "Runway will use the tool's own sign-in again.",
+          level: "info",
+        });
+        run(`${BAR_MOD}.refresh`);
+        cx.notify();
+      } catch (error) {
+        notify({
+          title: "Could not clear the key",
+          body: String(error?.message ?? error),
+          level: "error",
+        });
+      }
+    });
+  }
+
+  toggleKeyVisibility(id, cx) {
+    this.keyVisible[id] = !this.keyVisible[id];
+    this.keyInputs[id].set_masked(!this.keyVisible[id]);
     cx.notify();
   }
 
@@ -481,47 +630,150 @@ export default class AgentUsageDetail extends View {
       cx.notify();
     };
 
-    const manage = v_flex()
-      .w_full()
-      .gap(18)
-      .child(
-        setting(
-          "Providers",
-          "Off providers are hidden and never read.",
-          v_flex()
-            .w_full()
-            .rounded(8)
-            .bg(t.raised)
-            .border(1)
-            .border_color(t.border)
-            .overflow_hidden()
-            .children(all.map(manageRow)),
-        ),
-      )
-      .child(
-        setting(
-          "Auto refresh",
-          settings.manual
-            ? "Reads only when you press Refresh."
-            : `Every ${settings.minutes} minutes${next === null ? "" : ` · next in ${duration(next)}`}`,
+    const credentialRow = (item, index) => {
+      const saved = this.savedKeys.has(item.id);
+      const input = this.keyInputs[item.id];
+      const canSave = (input.value() ?? "").trim().length > 0;
+      return v_flex()
+        .w_full()
+        .gap(7)
+        .p(12)
+        .when(index > 0, (el) => el.border_t(1).border_color(t.border))
+        .child(
+          h_flex()
+            .items_center()
+            .gap(8)
+            .child(mark({ id: item.id, name: item.name }, 16, t.foreground))
+            .child(
+              v_flex()
+                .flex_1()
+                .min_w(0)
+                .gap(1)
+                .child(div().text_color(t.foreground).font_semibold().child(item.name))
+                .child(div().text_color(t.dim).text_size(10.5).child(item.hint)),
+            )
+            .child(
+              div()
+                .text_color(saved ? t.accent : t.dim)
+                .text_size(10.5)
+                .child(saved ? "Saved" : "Not set"),
+            ),
+        )
+        .child(
           h_flex()
             .items_center()
             .gap(6)
-            .children(
-              REFRESH_CHOICES.map((minutes) =>
-                chip(
-                  t,
-                  `runway-refresh-${minutes}`,
-                  `${minutes}m`,
-                  !settings.manual && settings.minutes === minutes,
-                  pickRefresh(minutes, false),
-                ),
+            .child(
+              div()
+                .flex_1()
+                .min_w(0)
+                .h(30)
+                .flex()
+                .items_center()
+                .rounded(6)
+                .border(1)
+                .border_color(t.border)
+                .bg(t.popover)
+                .px(8)
+                .child(Input.new(input).w_full().text_size(12).text_color(t.foreground)),
+            )
+            .child(
+              chip(
+                t,
+                `runway-key-show-${item.id}`,
+                this.keyVisible[item.id] ? "Hide" : "Show",
+                false,
+                (_event, cx) => this.toggleKeyVisibility(item.id, cx),
               ),
             )
-            .child(div().w(1).h(16).bg(t.border))
-            .child(chip(t, "runway-refresh-manual", "Manual", settings.manual, pickRefresh(settings.minutes, true))),
-        ),
+            .child(
+              chip(
+                t,
+                `runway-key-save-${item.id}`,
+                "Save",
+                canSave,
+                (_event, cx) => this.saveKey(item.id, cx),
+              ),
+            )
+            .when(saved, (el) =>
+              el.child(
+                chip(
+                  t,
+                  `runway-key-clear-${item.id}`,
+                  "Clear",
+                  false,
+                  (_event, cx) => this.clearKey(item.id, cx),
+                ),
+              ),
+            ),
+        );
+    };
+
+    const credentials = v_flex()
+      .w_full()
+      .rounded(8)
+      .bg(t.raised)
+      .border(1)
+      .border_color(t.border)
+      .overflow_hidden()
+      .children(CREDENTIALS.map(credentialRow));
+
+    const credentialsNote = div()
+      .text_color(t.dim)
+      .text_size(10.5)
+      .child(
+        "Codex, Antigravity, Kimi and Command Code use quota-axi sign-in. Keys live in ~/.config/herdr-app/runway-keys.json (mode 600).",
       );
+
+    const providersSection = setting(
+      "Providers",
+      "Off providers are hidden and never read.",
+      v_flex()
+        .w_full()
+        .rounded(8)
+        .bg(t.raised)
+        .border(1)
+        .border_color(t.border)
+        .overflow_hidden()
+        .children(all.map(manageRow)),
+    );
+
+    const credentialsSection = setting(
+      "Credentials",
+      "Saved keys override the tool's own sign-in.",
+      v_flex().gap(6).child(credentials).child(credentialsNote),
+    );
+
+    const refreshSection = setting(
+      "Auto refresh",
+      settings.manual
+        ? "Reads only when you press Refresh."
+        : `Every ${settings.minutes} minutes${next === null ? "" : ` · next in ${duration(next)}`}`,
+      h_flex()
+        .items_center()
+        .gap(6)
+        .children(
+          REFRESH_CHOICES.map((minutes) =>
+            chip(
+              t,
+              `runway-refresh-${minutes}`,
+              `${minutes}m`,
+              !settings.manual && settings.minutes === minutes,
+              pickRefresh(minutes, false),
+            ),
+          ),
+        )
+        .child(div().w(1).h(16).bg(t.border))
+        .child(chip(t, "runway-refresh-manual", "Manual", settings.manual, pickRefresh(settings.minutes, true))),
+    );
+
+    const manageBody =
+      this.settingsTab === "credentials"
+        ? credentialsSection
+        : this.settingsTab === "refresh"
+          ? refreshSection
+          : providersSection;
+    const manage = v_flex().w_full().gap(0).child(manageBody);
 
     const empty = v_flex()
       .w_full()
@@ -578,6 +830,24 @@ export default class AgentUsageDetail extends View {
                 ),
           )
           .child(iconButton(t, "runway-detail-close", "close.svg", "Close (Esc)", () => this.close())),
+      )
+      .when(this.managing, (el) =>
+        el.child(
+          h_flex()
+            .w_full()
+            .gap(6)
+            .children([
+              chip(t, "runway-settings-providers", "Providers", this.settingsTab === "providers", (_event, cx) =>
+                this.setSettingsTab("providers", cx),
+              ),
+              chip(t, "runway-settings-credentials", "Credentials", this.settingsTab === "credentials", (_event, cx) =>
+                this.setSettingsTab("credentials", cx),
+              ),
+              chip(t, "runway-settings-refresh", "Refresh", this.settingsTab === "refresh", (_event, cx) =>
+                this.setSettingsTab("refresh", cx),
+              ),
+            ]),
+        ),
       )
       .when(!this.managing && list.length > 0, (el) =>
         el.child(

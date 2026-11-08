@@ -1,13 +1,16 @@
-"""Claude usage from the Claude Code session on this machine.
+"""Claude usage from a Claude Code session or a pasted OAuth token.
 
-Reads the OAuth access token Claude Code keeps in its own config directory and
-asks the same usage endpoint its ``/usage`` view uses, then reports the plan
-windows and, when the account reports money instead of percentages, the dollars.
+Reads, in order: a token saved in Runway, ``CLAUDE_CODE_OAUTH_TOKEN``, Claude
+Code's own credential file, then an OAuth ``anthropic`` entry in OpenCode's
+``auth.json``. It asks the same usage endpoint Claude Code's ``/usage`` view
+uses, then reports the plan windows and, when the account reports money instead
+of percentages, the dollars.
 
 Usage:
     python collect_claude.py                  # text
     python collect_claude.py --json           # normalized JSON (mod contract)
     python collect_claude.py --config <dir>   # override the Claude config dir
+    python collect_claude.py --keys-file <path>  # Runway's saved credentials
 
 Exit codes: 0 success, 2 a known/unavailable condition, 1 unexpected failure.
 
@@ -26,6 +29,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+from runway_keys import read_key as read_runway_key
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 OAUTH_BETA = "oauth-2025-04-20"
@@ -332,15 +337,39 @@ def _stale_action(oauth) -> str:
     return f"{action} The sign-in itself is still valid."
 
 
-def read_credentials(config_dir=None) -> tuple[str, str | None]:
-    """Return (access token, plan) from Claude Code's own credential file."""
+def default_opencode_auth_path() -> Path:
+    base = os.environ.get("XDG_DATA_HOME")
+    root = Path(base).expanduser() if base else Path.home() / ".local" / "share"
+    return root / "opencode" / "auth.json"
+
+
+def read_opencode_oauth_token() -> str | None:
+    """Read an OAuth anthropic token from OpenCode's auth.json, never an API key."""
+    try:
+        data = json.loads(default_opencode_auth_path().read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+    entry = data.get("anthropic") if isinstance(data, dict) else None
+    if not isinstance(entry, dict) or entry.get("type") != "oauth":
+        return None
+    token = _text(entry.get("access"))
+    return token
+
+
+def reject_api_key(token: str) -> None:
+    if token.startswith("sk-ant-api"):
+        raise Unavailable(
+            "That is an Anthropic API key, not a Claude Code OAuth token.",
+            "wrong_credential",
+            "Paste the Claude Code OAuth token from `claude setup-token` or ~/.claude/.credentials.json.",
+        )
+
+
+def read_claude_file(config_dir=None):
+    """Return Claude Code's token data, or None when it has no session."""
     path = (Path(config_dir) if config_dir else default_config_dir()) / ".credentials.json"
     if not path.is_file():
-        raise Unavailable(
-            "Claude Code is not signed in on this machine.",
-            "not_signed_in",
-            "Run `claude auth login` and pick the account you want to watch.",
-        )
+        return None
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError):
@@ -353,30 +382,51 @@ def read_credentials(config_dir=None) -> tuple[str, str | None]:
     oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
     token = _text(oauth.get("accessToken")) if isinstance(oauth, dict) else None
     if not token:
-        raise Unavailable(
-            "Claude Code has no session on this machine.",
-            "not_signed_in",
-            "Run `claude auth login` and pick the account you want to watch.",
-        )
+        return None
 
     plan = _text(oauth.get("subscriptionType"))
-
     expires = _number(oauth.get("expiresAt"))
+    expired = False
     if expires:
-        # Claude Code writes milliseconds; older builds wrote seconds.
         expires_ms = expires if expires >= 1e11 else expires * 1000
-        if expires_ms <= time.time() * 1000:
-            # Two different things die here. The access token lives about 8
-            # hours and Claude Code renews it silently the next time it runs;
-            # the sign-in (the refresh token) lasts weeks. Calling this a
-            # signed-out session sent people to `claude auth login` while the
-            # CLI still said `loggedIn: true`.
-            raise Unavailable(
-                "The Claude Code access token expired; the sign-in is still valid.",
-                "token_stale",
-                _stale_action(oauth),
-            )
-    return token, plan
+        expired = expires_ms <= time.time() * 1000
+    return {"token": token, "plan": plan, "oauth": oauth, "expired": expired}
+
+
+def read_credentials(config_dir=None, keys_file=None) -> tuple[str, str | None]:
+    """Return (access token, plan), preferring explicit credentials."""
+    override = read_runway_key(keys_file, PROVIDER)
+    if override:
+        reject_api_key(override)
+        return override, None
+
+    env_token = _text(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+    if env_token:
+        reject_api_key(env_token)
+        return env_token, None
+
+    claude = read_claude_file(config_dir)
+    stale = None
+    if claude and not claude["expired"]:
+        return claude["token"], claude["plan"]
+    if claude and claude["expired"]:
+        stale = Unavailable(
+            "The Claude Code access token expired; the sign-in is still valid.",
+            "token_stale",
+            _stale_action(claude["oauth"]),
+        )
+
+    opencode = read_opencode_oauth_token()
+    if opencode:
+        return opencode, None
+
+    if stale:
+        raise stale
+    raise Unavailable(
+        "No Claude Code token was found on this machine.",
+        "not_signed_in",
+        "Paste a Claude Code OAuth token in Runway Settings → Credentials, or run `claude auth login`.",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -410,8 +460,8 @@ def fetch_usage(token: str) -> dict:
             raise Unavailable(
                 "api.anthropic.com rejected the Claude Code token.",
                 "token_rejected",
-                "Open Claude Code once and press refresh; if it still fails, run "
-                "`claude auth status` before signing in again.",
+                "Paste a fresh Claude Code OAuth token in Runway Settings → Credentials, "
+                "or open Claude Code once and press refresh.",
             ) from None
         if error.code == 403:
             raise Unavailable("The account refused access to its usage.", "forbidden")
@@ -441,8 +491,8 @@ def fetch_usage(token: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def collect(config_dir=None) -> dict:
-    token, plan = read_credentials(config_dir)
+def collect(config_dir=None, keys_file=None) -> dict:
+    token, plan = read_credentials(config_dir, keys_file)
     return normalize(fetch_usage(token), plan)
 
 
@@ -458,9 +508,14 @@ def main(argv) -> int:
         index = argv.index("--config")
         if index + 1 < len(argv):
             config_dir = argv[index + 1]
+    keys_file = None
+    if "--keys-file" in argv:
+        index = argv.index("--keys-file")
+        if index + 1 < len(argv):
+            keys_file = argv[index + 1]
 
     try:
-        record = collect(config_dir)
+        record = collect(config_dir, keys_file)
     except Unavailable as error:
         if as_json:
             print(

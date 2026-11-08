@@ -3,7 +3,12 @@
 // duplicated in both mod folders because a mod cannot import from outside its
 // own folder: keep the two copies identical.
 
-import { setShared, shared } from "herdr";
+import { appHome, setShared, shared } from "herdr";
+
+// The credential file the dialog writes and the collectors read.
+export function keysFile() {
+  return `${appHome()}/runway-keys.json`;
+}
 
 export const SNAPSHOT = "runway.snapshot";
 export const SETTINGS_KEY = "runway.settings";

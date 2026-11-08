@@ -1,2 +1,4 @@
 runway/mods/*/gpui-kit.d.ts
 runway/mods/*/jsconfig.json
+__pycache__/
+*.pyc

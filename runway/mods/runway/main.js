@@ -14,6 +14,7 @@ import {
   SNAPSHOT,
   barColor,
   countdown,
+  keysFile,
   meterPercent,
   primaryWindow,
   providers,
@@ -38,9 +39,9 @@ const DETAIL_MOD = "runway-detail";
 // and may also answer with a readable error; both are normalized below. `logo`
 // is the file in this folder drawn in place of the provider name.
 const SOURCES = [
-  { id: "claude", name: "Claude", helper: "collect_claude.py", logo: "claude.svg" },
-  { id: "opencode-go", name: "OpenCode", helper: "collect.py", logo: "opencode.svg" },
-  { id: "kenari", name: "Kenari", helper: "collect_kenari.py", logo: "kenari.svg" },
+  { id: "claude", name: "Claude", helper: "collect_claude.py", logo: "claude.svg", keys: true },
+  { id: "opencode-go", name: "OpenCode", helper: "collect.py", logo: "opencode.svg", keys: true },
+  { id: "kenari", name: "Kenari", helper: "collect_kenari.py", logo: "kenari.svg", keys: true },
   {
     id: "quota-axi",
     name: "Quota AXI",
@@ -161,6 +162,7 @@ export default class AgentUsage extends View {
 
   async runHelper(source) {
     const args = [this.helper(source), "--json"];
+    if (source.keys) args.push("--keys-file", keysFile());
     if (source.multiple) {
       const enabled = enabledSet();
       const ids = source.providers
