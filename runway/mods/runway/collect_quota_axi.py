@@ -85,6 +85,8 @@ def _error(provider, name, message, code="unavailable", action=None):
         "error": message,
         "code": code,
         "action": action,
+        "source": "quota-axi",
+        "http_status": None,
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -118,6 +120,8 @@ def _normalize(provider, name, raw):
         "error": None,
         "code": None,
         "action": None,
+        "source": "quota-axi",
+        "http_status": None,
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 

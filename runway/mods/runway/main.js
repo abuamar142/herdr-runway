@@ -96,7 +96,7 @@ function logoFor(id) {
   return null;
 }
 
-function failed(source, error, code, action, detail) {
+function failed(source, error, code, action, detail, extra = {}) {
   return {
     id: source.id,
     name: source.name,
@@ -108,6 +108,8 @@ function failed(source, error, code, action, detail) {
     code: code ? String(code) : null,
     action: action ? String(action) : null,
     failure: detail ? String(detail).slice(0, 400) : null,
+    source: typeof extra.source === "string" ? extra.source : null,
+    http_status: typeof extra.http_status === "number" ? extra.http_status : null,
   };
 }
 
@@ -391,7 +393,10 @@ export default class AgentUsage extends View {
     const id = typeof parsed.id === "string" && parsed.id ? parsed.id : source.id;
     const name = typeof parsed.name === "string" && parsed.name ? parsed.name : source.name;
     if (parsed.error) {
-      return failed({ id, name }, parsed.error, parsed.code, parsed.action, parsed.failure);
+      return failed({ id, name }, parsed.error, parsed.code, parsed.action, parsed.failure, {
+        source: typeof parsed.source === "string" ? parsed.source : null,
+        http_status: typeof parsed.http_status === "number" ? parsed.http_status : null,
+      });
     }
     return {
       id,
@@ -410,6 +415,8 @@ export default class AgentUsage extends View {
       code: null,
       action: null,
       failure: null,
+      source: typeof parsed.source === "string" ? parsed.source : null,
+      http_status: typeof parsed.http_status === "number" ? parsed.http_status : null,
     };
   }
 
@@ -475,6 +482,8 @@ export default class AgentUsage extends View {
             code: null,
             action: null,
             failure: null,
+            source: null,
+            http_status: null,
           });
         }
       }

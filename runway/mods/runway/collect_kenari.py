@@ -34,11 +34,20 @@ WINDOW_LABELS = {"five_hour": "5h", "week": "week", "month": "month"}
 
 
 class Unavailable(Exception):
-    def __init__(self, message: str, code: str = "unavailable", action: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        code: str = "unavailable",
+        action: str | None = None,
+        status: int | None = None,
+        source: str | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.code = code
         self.action = action
+        self.status = status
+        self.source = source
 
 
 def _text(value) -> str | None:
@@ -85,14 +94,21 @@ def _stamp(resets_at) -> str:
     return when.strftime("%Y-%m-%d %H:%MZ") if when else "unknown"
 
 
-def read_key(keys_file=None) -> str:
+def read_key(keys_file=None, only_key=False) -> tuple[str, str]:
     key = read_runway_key(keys_file, PROVIDER)
     if key:
-        return key
+        return key, "saved key"
+    if only_key:
+        raise Unavailable(
+            "No key saved for this account.",
+            "missing_key",
+            "Paste a Kenari API key in Runway Settings → Credentials.",
+            source="saved key",
+        )
 
     key = _text(os.environ.get("KENARI_API_KEY"))
     if key:
-        return key
+        return key, "KENARI_API_KEY"
 
     home = Path(os.environ.get("KENARI_HOME") or (Path.home() / ".kenari")).expanduser()
     candidates = [home / "credentials.json"]
@@ -109,7 +125,7 @@ def read_key(keys_file=None) -> str:
             block = re.search(r"^  kenari:\n([\s\S]*?)(?=^  \S|(?![\s\S]))", text, re.M)
             match = re.search(r'^\s+apiKey:\s*"?([^"\s#]+)"?', block.group(1), re.M) if block else None
             if match:
-                return match.group(1)
+                return match.group(1), "OMP models.yml"
             continue
         try:
             data = json.loads(text)
@@ -118,7 +134,7 @@ def read_key(keys_file=None) -> str:
         for name in ("apiKey", "api_key", "key", "token"):
             value = _text(data.get(name) if isinstance(data, dict) else None)
             if value:
-                return value
+                return value, "Kenari credentials.json"
 
     raise Unavailable(
         "No Kenari API key was found.",
@@ -145,16 +161,27 @@ def request_json(url: str, key: str) -> dict:
                 "Kenari rejected the API key.",
                 "unauthorized",
                 "Paste a new key in Runway Settings → Credentials, or run `kenari login` again.",
+                status=error.code,
             ) from None
         if error.code == 403:
             raise Unavailable(
                 "This Kenari key cannot read account quota.",
                 "forbidden",
                 "Use an unrestricted Owner/Admin key; restricted or shared keys cannot read quota.",
+                status=error.code,
             ) from None
         if error.code == 429:
-            raise Unavailable("Kenari rate-limited the usage request.", "rate_limited", "Wait a minute and retry.") from None
-        raise Unavailable(f"Kenari returned HTTP {error.code}.", "http_error") from None
+            raise Unavailable(
+                "Kenari rate-limited the usage request.",
+                "rate_limited",
+                "Wait a minute and retry.",
+                status=error.code,
+            ) from None
+        raise Unavailable(
+            f"Kenari returned HTTP {error.code}.",
+            "http_error",
+            status=error.code,
+        ) from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise Unavailable(f"Could not reach Kenari: {error}.", "offline", "Check the network and retry.") from None
     if len(raw) > MAX_BYTES:
@@ -244,10 +271,14 @@ def main() -> int:
         index = argv.index("--keys-file")
         if index + 1 < len(argv):
             keys_file = argv[index + 1]
+    only_key = "--only-key" in argv
+    source = None
     try:
-        key = read_key(keys_file)
+        key, source = read_key(keys_file, only_key)
         quota = request_json(f"{BASE_URL}/account/quota", key)
         record = normalize(quota)
+        record["source"] = source
+        record["http_status"] = 200
     except Unavailable as error:
         record = {
             "provider": PROVIDER,
@@ -258,6 +289,8 @@ def main() -> int:
             "error": error.message,
             "code": error.code,
             "action": error.action,
+            "source": error.source or source,
+            "http_status": error.status,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         if want_json:

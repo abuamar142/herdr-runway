@@ -70,11 +70,20 @@ BUCKETS = (
 class Unavailable(Exception):
     """A condition the person can understand and usually act on."""
 
-    def __init__(self, message: str, code: str = "unavailable", action: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        code: str = "unavailable",
+        action: str | None = None,
+        status: int | None = None,
+        source: str | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.code = code
         self.action = action
+        self.status = status
+        self.source = source
 
 
 # --------------------------------------------------------------------------- #
@@ -393,32 +402,50 @@ def read_claude_file(config_dir=None):
     return {"token": token, "plan": plan, "oauth": oauth, "expired": expired}
 
 
-def read_credentials(config_dir=None, keys_file=None) -> tuple[str, str | None]:
-    """Return (access token, plan), preferring explicit credentials."""
+def read_credentials(
+    config_dir=None, keys_file=None, only_key=False
+) -> tuple[str, str | None, str]:
+    """Return (access token, plan, source), preferring explicit credentials."""
     override = read_runway_key(keys_file, PROVIDER)
     if override:
-        reject_api_key(override)
-        return override, None
+        try:
+            reject_api_key(override)
+        except Unavailable as error:
+            error.source = "saved key"
+            raise
+        return override, None, "saved key"
+    if only_key:
+        raise Unavailable(
+            "No key saved for this account.",
+            "missing_key",
+            "Paste a Claude Code OAuth token in Runway Settings → Credentials.",
+            source="saved key",
+        )
 
     env_token = _text(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
     if env_token:
-        reject_api_key(env_token)
-        return env_token, None
+        try:
+            reject_api_key(env_token)
+        except Unavailable as error:
+            error.source = "CLAUDE_CODE_OAUTH_TOKEN"
+            raise
+        return env_token, None, "CLAUDE_CODE_OAUTH_TOKEN"
 
     claude = read_claude_file(config_dir)
     stale = None
     if claude and not claude["expired"]:
-        return claude["token"], claude["plan"]
+        return claude["token"], claude["plan"], "Claude Code credentials"
     if claude and claude["expired"]:
         stale = Unavailable(
             "The Claude Code access token expired; the sign-in is still valid.",
             "token_stale",
             _stale_action(claude["oauth"]),
+            source="Claude Code credentials",
         )
 
     opencode = read_opencode_oauth_token()
     if opencode:
-        return opencode, None
+        return opencode, None, "OpenCode auth.json"
 
     if stale:
         raise stale
@@ -462,18 +489,29 @@ def fetch_usage(token: str) -> dict:
                 "token_rejected",
                 "Paste a fresh Claude Code OAuth token in Runway Settings → Credentials, "
                 "or open Claude Code once and press refresh.",
+                status=error.code,
             ) from None
         if error.code == 403:
-            raise Unavailable("The account refused access to its usage.", "forbidden")
+            raise Unavailable("The account refused access to its usage.", "forbidden", status=error.code)
         if error.code == 404:
             raise Unavailable(
                 "Anthropic no longer serves the usage endpoint this mod reads.",
                 "endpoint_missing",
                 "Check for a newer version of this mod.",
+                status=error.code,
             )
         if error.code == 429:
-            raise Unavailable("Rate limited by api.anthropic.com.", "rate_limited", "Try again later.")
-        raise Unavailable(f"api.anthropic.com answered HTTP {error.code}.", "http_error") from None
+            raise Unavailable(
+                "Rate limited by api.anthropic.com.",
+                "rate_limited",
+                "Try again later.",
+                status=error.code,
+            )
+        raise Unavailable(
+            f"api.anthropic.com answered HTTP {error.code}.",
+            "http_error",
+            status=error.code,
+        ) from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         reason = getattr(error, "reason", error)
         raise Unavailable(f"Could not reach api.anthropic.com: {reason}", "offline") from None
@@ -491,9 +529,17 @@ def fetch_usage(token: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def collect(config_dir=None, keys_file=None) -> dict:
-    token, plan = read_credentials(config_dir, keys_file)
-    return normalize(fetch_usage(token), plan)
+def collect(config_dir=None, keys_file=None, only_key=False) -> dict:
+    token, plan, source = read_credentials(config_dir, keys_file, only_key)
+    try:
+        data = fetch_usage(token)
+    except Unavailable as error:
+        error.source = error.source or source
+        raise
+    record = normalize(data, plan)
+    record["source"] = source
+    record["http_status"] = 200
+    return record
 
 
 def main(argv) -> int:
@@ -513,9 +559,10 @@ def main(argv) -> int:
         index = argv.index("--keys-file")
         if index + 1 < len(argv):
             keys_file = argv[index + 1]
+    only_key = "--only-key" in argv
 
     try:
-        record = collect(config_dir, keys_file)
+        record = collect(config_dir, keys_file, only_key)
     except Unavailable as error:
         if as_json:
             print(
@@ -526,6 +573,8 @@ def main(argv) -> int:
                         "error": error.message,
                         "code": error.code,
                         "action": error.action,
+                        "source": error.source,
+                        "http_status": error.status,
                     },
                     indent=2,
                 )

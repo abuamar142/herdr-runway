@@ -8,7 +8,9 @@
 
 import { View, div, svg } from "gpui-kit";
 import { Input, InputState, h_flex, v_flex } from "gpui-base";
+import * as fs from "fs/promises";
 import {
+  appHome,
   closeOverlay,
   exec,
   notify,
@@ -63,6 +65,12 @@ const ASSETS = "mods/runway";
 const ENABLED_KEY = "runway.enabled";
 const REFRESH_CHOICES = [5, 10, 15, 30, 60];
 const INTERVAL_CHOICES = [0, 5, 10, 15, 30, 60];
+const HELPERS = {
+  claude: "collect_claude.py",
+  "opencode-go": "collect.py",
+  kenari: "collect_kenari.py",
+};
+const PYTHON_HOSTS = ["python", "python3", "py"];
 const LOGOS = {
   claude: "claude.svg",
   "opencode-go": "opencode.svg",
@@ -298,6 +306,15 @@ function windowCard(meter, t) {
     );
 }
 
+function diagnosticLine(provider, t) {
+  const parts = [];
+  if (provider.source) parts.push(`Credential: ${provider.source}`);
+  if (typeof provider.http_status === "number") parts.push(`HTTP ${provider.http_status}`);
+  if (provider.updated) parts.push(`Checked ${clockTime(provider.updated)}`);
+  if (!parts.length) return null;
+  return div().text_color(t.dim).text_size(10.5).child(parts.join(" · "));
+}
+
 function errorCard(provider, t) {
   const children = [
     div().text_color(t.blocked).font_semibold().child(String(provider.error)),
@@ -308,6 +325,8 @@ function errorCard(provider, t) {
   if (provider.failure) {
     children.push(div().text_color(t.dim).text_size(10.5).child(String(provider.failure)));
   }
+  const diagnostic = diagnosticLine(provider, t);
+  if (diagnostic) children.push(diagnostic);
   return v_flex()
     .w_full()
     .gap(6)
@@ -382,6 +401,8 @@ function section(provider, t) {
   if (!cards.length && !provider.period_ends_at) {
     children.push(div().text_color(t.dim).child("No reading yet."));
   }
+  const diagnostic = diagnosticLine(provider, t);
+  if (diagnostic) children.push(diagnostic);
   return v_flex().w_full().gap(12).children(children);
 }
 
@@ -393,6 +414,8 @@ export default class AgentUsageDetail extends View {
     this.savedKeys = new Set();
     this.keyVisible = {};
     this.keyInputs = {};
+    this.testing = {};
+    this.testResult = {};
     for (const item of CREDENTIALS) {
       const input = InputState.new({ placeholder: item.placeholder });
       input.set_masked(true);
@@ -498,6 +521,78 @@ export default class AgentUsageDetail extends View {
           body: String(error?.message ?? error),
           level: "error",
         });
+      }
+    });
+  }
+
+  testKey(id, cx) {
+    const input = this.keyInputs[id];
+    const value = (input.value() ?? "").trim();
+    if (!value) {
+      notify({ title: "Key is empty", body: "Paste a key first.", level: "warning" });
+      return;
+    }
+    const helper = HELPERS[id];
+    if (!helper || this.testing[id]) return;
+    this.testing[id] = true;
+    this.testResult[id] = null;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const safe = String(id).replace(/[^a-z0-9-]/gi, "_");
+      const path = `${appHome()}/runway-test-${safe}-${Date.now()}.json`;
+      try {
+        await writeTextFile(path, `${JSON.stringify({ [id]: value })}\n`, null);
+        try {
+          await exec("chmod", ["600", path]);
+        } catch (_) {
+          // The file is short-lived; chmod is a best-effort POSIX hint.
+        }
+        let result = null;
+        let lastError = null;
+        for (const host of PYTHON_HOSTS) {
+          try {
+            result = await exec(host, [
+              `${appHome()}/mods/runway/${helper}`,
+              "--json",
+              "--keys-file",
+              path,
+              "--only-key",
+            ]);
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (!result) throw lastError ?? new Error("Python was not found.");
+        const text = (result.stdout ?? "").trim();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch (_) {
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error((result.stderr ?? "").trim() || "The helper returned no readable JSON.");
+        }
+        if (parsed.error) {
+          this.testResult[id] = {
+            ok: false,
+            text: `${parsed.error}${parsed.code ? ` (${parsed.code})` : ""}`,
+          };
+        } else {
+          const plan = typeof parsed.plan === "string" && parsed.plan ? ` · ${parsed.plan}` : "";
+          this.testResult[id] = { ok: true, text: `Valid${plan}` };
+        }
+      } catch (error) {
+        this.testResult[id] = { ok: false, text: String(error?.message ?? error) };
+      } finally {
+        try {
+          await fs.unlink(path);
+        } catch (_) {
+          // Already gone or never created.
+        }
+        this.testing[id] = false;
+        cx.notify();
       }
     });
   }
@@ -685,6 +780,14 @@ export default class AgentUsageDetail extends View {
       const saved = this.savedKeys.has(item.id);
       const input = this.keyInputs[item.id];
       const canSave = (input.value() ?? "").trim().length > 0;
+      const live = providers().find((provider) => provider.id === item.id);
+      const diagnostic = [
+        live?.source ? `via ${live.source}` : "",
+        typeof live?.http_status === "number" ? `HTTP ${live.http_status}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const result = this.testResult[item.id];
       return v_flex()
         .w_full()
         .gap(7)
@@ -701,7 +804,10 @@ export default class AgentUsageDetail extends View {
                 .min_w(0)
                 .gap(1)
                 .child(div().text_color(t.foreground).font_semibold().child(item.name))
-                .child(div().text_color(t.dim).text_size(10.5).child(item.hint)),
+                .child(div().text_color(t.dim).text_size(10.5).child(item.hint))
+                .when(diagnostic, (el) =>
+                  el.child(div().text_color(t.dim).text_size(10).child(diagnostic)),
+                ),
             )
             .child(
               div()
@@ -740,6 +846,15 @@ export default class AgentUsageDetail extends View {
             .child(
               chip(
                 t,
+                `runway-key-test-${item.id}`,
+                this.testing[item.id] ? "Testing…" : "Test",
+                false,
+                (_event, cx) => this.testKey(item.id, cx),
+              ),
+            )
+            .child(
+              chip(
+                t,
                 `runway-key-save-${item.id}`,
                 "Save",
                 canSave,
@@ -757,6 +872,14 @@ export default class AgentUsageDetail extends View {
                 ),
               ),
             ),
+        )
+        .when(result, (el) =>
+          el.child(
+            div()
+              .text_color(result.ok ? t.accent : t.blocked)
+              .text_size(10.5)
+              .child(result.text),
+          ),
         );
     };
 

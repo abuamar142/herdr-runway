@@ -47,11 +47,20 @@ MICRO_CENTS_PER_USD = 100_000_000
 class Unavailable(Exception):
     """A condition the person can understand and usually act on."""
 
-    def __init__(self, message: str, code: str = "unavailable", action: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        code: str = "unavailable",
+        action: str | None = None,
+        status: int | None = None,
+        source: str | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.code = code
         self.action = action
+        self.status = status
+        self.source = source
 
 
 # --------------------------------------------------------------------------- #
@@ -362,12 +371,26 @@ def fetch_status(token: str) -> dict:
                 "The OpenCode Console session is not valid anymore.",
                 "expired",
                 "In opencode run /connect and reconnect the Console account.",
+                status=error.code,
             ) from None
         if error.code == 403:
-            raise Unavailable("The Console refused access to Go usage.", "forbidden")
+            raise Unavailable(
+                "The Console refused access to Go usage.",
+                "forbidden",
+                status=error.code,
+            )
         if error.code == 429:
-            raise Unavailable("Rate limited by opencode.ai.", "rate_limited", "Try again later.")
-        raise Unavailable(f"opencode.ai answered HTTP {error.code}.", "http_error") from None
+            raise Unavailable(
+                "Rate limited by opencode.ai.",
+                "rate_limited",
+                "Try again later.",
+                status=error.code,
+            )
+        raise Unavailable(
+            f"opencode.ai answered HTTP {error.code}.",
+            "http_error",
+            status=error.code,
+        ) from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         reason = getattr(error, "reason", error)
         raise Unavailable(f"Could not reach opencode.ai: {reason}", "offline") from None
@@ -408,11 +431,13 @@ def fetch_api(token: str) -> dict:
                     "The OpenCode Go API key expired.",
                     "api_key_expired",
                     "Create a new key in OpenCode Console and paste it in Runway Settings → Credentials.",
+                    status=error.code,
                 ) from None
             raise Unavailable(
                 "OpenCode Go rejected the credential.",
                 "unauthorized",
                 "Paste a valid OpenCode Go API key in Runway Settings → Credentials.",
+                status=error.code,
             ) from None
         if error.code == 403:
             if "Entitlement" in body or "subscription required" in body:
@@ -420,11 +445,25 @@ def fetch_api(token: str) -> dict:
                     "This OpenCode workspace has no Go subscription.",
                     "no_plan",
                     "Use a key from a workspace with OpenCode Go.",
+                    status=error.code,
                 ) from None
-            raise Unavailable("OpenCode refused access to Go usage.", "forbidden")
+            raise Unavailable(
+                "OpenCode refused access to Go usage.",
+                "forbidden",
+                status=error.code,
+            )
         if error.code == 429:
-            raise Unavailable("Rate limited by opencode.ai.", "rate_limited", "Try again later.")
-        raise Unavailable(f"opencode.ai answered HTTP {error.code}.", "http_error") from None
+            raise Unavailable(
+                "Rate limited by opencode.ai.",
+                "rate_limited",
+                "Try again later.",
+                status=error.code,
+            )
+        raise Unavailable(
+            f"opencode.ai answered HTTP {error.code}.",
+            "http_error",
+            status=error.code,
+        ) from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         reason = getattr(error, "reason", error)
         raise Unavailable(f"Could not reach opencode.ai: {reason}", "offline") from None
@@ -442,10 +481,24 @@ def fetch_api(token: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def collect(db_path=None, keys_file=None) -> dict:
+def collect(db_path=None, keys_file=None, only_key=False) -> dict:
     override = read_runway_key(keys_file, PROVIDER)
     if override:
-        return normalize_api(fetch_api(override))
+        try:
+            record = normalize_api(fetch_api(override))
+        except Unavailable as error:
+            error.source = error.source or "saved key"
+            raise
+        record["source"] = "saved key"
+        record["http_status"] = 200
+        return record
+    if only_key:
+        raise Unavailable(
+            "No key saved for this account.",
+            "missing_key",
+            "Paste an OpenCode Go API key in Runway Settings → Credentials.",
+            source="saved key",
+        )
 
     candidates = []
     sqlite_token = read_sqlite_token(db_path)
@@ -469,10 +522,14 @@ def collect(db_path=None, keys_file=None) -> dict:
         )
 
     last = None
-    for _name, token, is_api in candidates:
+    for name, token, is_api in candidates:
         try:
-            return normalize_api(fetch_api(token)) if is_api else normalize(fetch_status(token))
+            record = normalize_api(fetch_api(token)) if is_api else normalize(fetch_status(token))
+            record["source"] = name
+            record["http_status"] = 200
+            return record
         except Unavailable as error:
+            error.source = name
             last = error
             if error.code not in {"expired", "unauthorized", "api_key_expired", "forbidden", "no_plan"}:
                 raise
@@ -496,9 +553,10 @@ def main(argv) -> int:
         index = argv.index("--keys-file")
         if index + 1 < len(argv):
             keys_file = argv[index + 1]
+    only_key = "--only-key" in argv
 
     try:
-        record = collect(db_path, keys_file)
+        record = collect(db_path, keys_file, only_key)
     except Unavailable as error:
         if as_json:
             print(
@@ -509,6 +567,8 @@ def main(argv) -> int:
                         "error": error.message,
                         "code": error.code,
                         "action": error.action,
+                        "source": error.source,
+                        "http_status": error.status,
                     },
                     indent=2,
                 )

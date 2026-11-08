@@ -57,10 +57,11 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - `Providers`, with one row per known provider: mark, name, plan, current
   reading, and a 34×20px switch. Off rows are dimmed.
 - `Credentials`, with one row for Claude Code, OpenCode Go and Kenari. Each row
-  has a 16px mark, the name, a one-line hint, a `Saved`/`Not set` status, a
-  30px masked input, and `Show`, `Save` and (when saved) `Clear`. A footnote
-  says Codex, Antigravity, Kimi and Command Code use `quota-axi` sign-in, and
-  names the key file.
+  has a 16px mark, the name, a one-line hint, the last read's source and HTTP
+  status, a `Saved`/`Not set` status, a 30px masked input, and `Show`, `Test`,
+  `Save` and (when saved) `Clear`. A test result appears under the input. A
+  footnote says Codex, Antigravity, Kimi and Command Code use `quota-axi`
+  sign-in, and names the key file.
 - `Refresh`, with chips `5m 10m 15m 30m 60m | Manual`. The active chip has an
   `accent` border and an 18% `accent` fill. The hint reads
   `Every 5 minutes · next in 3m` or `Reads only when you press Refresh.`
@@ -79,7 +80,10 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Saving a credential writes `~/.config/herdr-app/runway-keys.json` with mode
   `600`, clears the input, marks the row `Saved`, and runs one refresh.
   Clearing deletes that provider's entry and runs one refresh; the collector
-  falls back to the tool's own sign-in.
+  falls back to the tool's own sign-in. **Test** does not save: it writes the
+  pasted value to a short-lived `runway-test-*.json` (mode 600), runs the
+  helper with `--only-key`, shows the helper's answer under the input, and
+  deletes the file.
 - A saved key overrides every automatic source. With no saved key, Claude
   reads `CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's credential file, then an
   OAuth `anthropic` entry in OpenCode's `auth.json`. OpenCode reads its SQLite
@@ -156,9 +160,12 @@ source:
 
 Every helper answers `--json` with
 `{ provider|id, name|title, plan, windows[], money, period_ends_at, error,
-code, action, failure }`. The bar normalizes that to
+code, action, failure, source, http_status }`. `source` names the credential
+route used (`saved key`, `Claude Code credentials`, `OpenCode Console login`,
+`OMP models.yml`, `quota-axi`, and so on); `http_status` is the last HTTP code
+when there was one. The bar normalizes that to
 `{ id, name, plan, windows, money, period_ends_at, updated, error, code, action,
-failure }`.
+failure, source, http_status }`.
 
 Herdr functions used: `shared`, `setShared`, `exec`, `appHome`, `openOverlay`,
 `closeOverlay`, `props`, `run`, `nextCommand`, `theme`, `readTextFile`,
@@ -254,7 +261,9 @@ a layout; the bar opens it with `openOverlay`.
   Say so before installing.
 - A saved key is plaintext on disk with mode `600`, like
   `~/.kenari/credentials.json`. Anyone who can read the user's home can read
-  it. `chmod` is skipped on Windows, where the profile ACL applies.
+  it. `chmod` is skipped on Windows, where the profile ACL applies. The Test
+  temp file is mode `600` and is deleted in `finally`, even when the helper
+  fails.
 - Claude's field is an **OAuth token**, not an Anthropic API key. The collector
   rejects `sk-ant-api...` before a request; subscription usage cannot be read
   with an API key.
@@ -293,6 +302,9 @@ a layout; the bar opens it with `openOverlay`.
   provider. Clearing removes the entry and returns to automatic detection.
 - A Claude `sk-ant-api...` value is rejected as the wrong credential type. An
   expired OpenCode key reports `api_key_expired` with the Console action.
+- Each credential row shows the source and HTTP status of the last read.
+  **Test** with a valid key says `Valid`; a bad key shows the helper error and
+  code, and leaves no `runway-test-*.json` behind.
 - Turning it back on runs one read and restores the item.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
 - The interval chip on a provider row cycles Auto/5/10/15/30/60 and the choice

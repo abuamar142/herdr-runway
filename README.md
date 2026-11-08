@@ -100,8 +100,9 @@ to the tool's own sign-in. Codex, Antigravity, Kimi and Command Code use
   `S` opens settings, `Esc` closes.
 - The gear opens settings: **Providers**, **Credentials**, **Refresh**,
   **Alerts** and **Bar** are separate tabs.
-- Credentials: paste a key, press Save (or Enter), use Show/Hide, and Clear to
-  return to automatic detection.
+- Credentials: paste a key, press Save (or Enter), use Show/Hide, **Test** to
+  validate it without saving, and Clear to return to automatic detection. Each
+  row also shows which source the last read used and its HTTP status.
 - Refresh: choose 5, 10, 15, 30, 60 minutes, or Manual.
 - Alerts: choose warn/critical percentages, forecast and reset toasts, or
   snooze for an hour. **Send test** posts one toast.
@@ -122,7 +123,10 @@ The collectors read credentials that already exist on this machine and use
 them only as `Authorization` headers. Tokens are never printed or logged. If
 you save a key in the panel, it is stored in
 `~/.config/herdr-app/runway-keys.json` with mode `600`; otherwise nothing is
-written by Runway. Only normalized numbers are written to Herdr's shared state.
+written by Runway. **Test** writes the pasted key to a short-lived
+`runway-test-*.json` with mode `600`, asks the helper with `--only-key`, and
+deletes it. Only normalized numbers and the credential source name are written
+to Herdr's shared state.
 
 Network endpoints:
 
