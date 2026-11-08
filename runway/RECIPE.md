@@ -16,7 +16,8 @@ when the current pace runs out before the reset.
   flight.
 - One item per enabled provider, separated by a 1×12px `border` divider. Each
   item is a 6×2px rounded hover target with a 13px provider mark, the primary
-  window's percentage at 12px semibold, and a 28×4px mini meter. The meter's
+  selected bar window's percentage at 12px semibold, and a 28×4px mini meter.
+  The meter's
   track is `foreground` at 16% opacity; its fill is `accent` below 75%,
   `working` from 75%, `blocked` from 95%.
 - A blocked provider shows a `blocked` `!` instead of a meter. A provider whose
@@ -59,7 +60,8 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 `Refresh`, `Alerts` and `Bar`.
 
 - `Providers`, with one row per known provider: mark, name, plan, current
-  reading, and a 34×20px switch. Off rows are dimmed.
+  reading, `↑`/`↓` order chips, an interval chip, and a 34×20px switch. Off
+  rows are dimmed.
 - `Credentials`, grouped by Claude Code, OpenCode Go and Kenari. A group
   header has the mark, the provider name, the account count and `+ Account`.
   Each account row has the label, the last read's source and HTTP status, a
@@ -71,6 +73,10 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - `Refresh`, with chips `5m 10m 15m 30m 60m | Manual`. The active chip has an
   `accent` border and an 18% `accent` fill. The hint reads
   `Every 5 minutes · next in 3m` or `Reads only when you press Refresh.`
+- `Alerts`, with rows for Notifications On/Off, Warn at 75/80/90, Critical at
+  90/95/100, Forecast On/Off, Window reset On/Off, Snooze 1h, and Send test.
+- `Bar`, with Window chips `Primary 5h Week Month Worst`, Show chips
+  `All Critical Worst`, and Hide unconfigured On/Off.
 
 ## How it behaves
 
@@ -157,7 +163,7 @@ Two mods, installed together:
 folder. Keep the two copies byte-identical.
 
 The bar reads providers with `exec` on `python`/`python3`/`py`, one helper per
-source:
+provider account (and one quota-axi call for its four providers):
 
 - `runway_keys.py` — reads one provider's entry, or one account entry by
   `--key-id`, from Runway's key file; a missing or malformed file is not an
@@ -334,7 +340,7 @@ a layout; the bar opens it with `openOverlay`.
   pace tick; a window on track to run out shows `Limit in ~… at this pace`.
 - Settings opens from the gear, switches a provider off, and the bar loses that
   item. A read while it is off does not run that provider's collector.
-- Credentials shows three rows; saving a key marks it `Saved`, writes
+- Credentials shows three groups with one default account each; saving a key marks it `Saved`, writes
   `~/.config/herdr-app/runway-keys.json` with mode `600`, and refreshes that
   provider. Clearing removes the entry and returns to automatic detection.
 - A Claude `sk-ant-api...` value is rejected as the wrong credential type. An
@@ -349,7 +355,7 @@ a layout; the bar opens it with `openOverlay`.
 - Changing Auto refresh to `Manual` stops periodic reads; Refresh still works.
 - The interval chip on a provider row cycles Auto/5/10/15/30/60 and the choice
   survives a restart.
-- Alerts shows the five tabs and the Send test toast appears. Crossing a
+- Settings shows the five tabs and the Send test toast appears. Crossing a
   threshold writes `warn`/`critical` into `data/runway/store.json` and does not
   repeat on the next refresh.
 - Bar changes the window and density; `Worst` shows one provider and `Critical`

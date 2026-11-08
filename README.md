@@ -154,8 +154,9 @@ code in `runway/mods/`.
 
 Remove `~/.config/herdr-app/mods/runway/` and
 `~/.config/herdr-app/mods/runway-detail/`, and remove the `runway` block from
-the layout. Delete `~/.config/herdr-app/runway-keys.json` if you saved keys.
-Herdr keeps the `runway.*` shared keys; they are harmless.
+the layout. Delete `~/.config/herdr-app/runway-keys.json` if you saved keys,
+and `~/.config/herdr-app/runway-history.json` for the chart. Herdr keeps the
+`runway.*` shared keys; they are harmless.
 
 ## License and marks
 
