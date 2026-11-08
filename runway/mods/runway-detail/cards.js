@@ -21,6 +21,7 @@ import {
   windowSpan,
 } from "./format.js";
 import { CCUSAGE_AGENTS, LOGOS } from "./metadata.js";
+import { burnRate, currentWindowPoints, projectedEnd } from "./history.js";
 
 export const ASSETS = "mods/runway";
 const WINDOW_NAMES = {
@@ -307,19 +308,14 @@ function historyCard(provider, t, history, range, onRange) {
   const reset = primary.resets_at
     ? new Date(primary.resets_at).getTime()
     : null;
-  const windowLength = windowSpan(primary.key);
-  const windowStart = reset && windowLength ? reset - windowLength : null;
-  const windowPoints = windowStart === null
-    ? points
-    : points.filter((point) => point.t >= windowStart);
-  const first = windowPoints[0];
+  const windowPoints = currentWindowPoints(
+    points,
+    reset,
+    windowSpan(primary.key),
+  );
+  const rate = burnRate(windowPoints);
   const last = windowPoints[windowPoints.length - 1];
-  const hours = first && last ? (last.t - first.t) / 3600000 : 0;
-  const rate = hours > 0.05 ? (last.p - first.p) / hours : null;
-  const left = reset && reset > now ? (reset - now) / 3600000 : null;
-  const projected = rate !== null && left !== null
-    ? Math.max(0, last.p + rate * left)
-    : null;
+  const projected = projectedEnd(last?.p, rate, reset, now);
   const projectedLabel = projected === null
     ? ""
     : projected > 100
