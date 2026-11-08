@@ -230,7 +230,7 @@ def daily_totals() -> dict:
 
 def claude_block() -> dict | None:
     try:
-        payload = _run(["blocks", "--json", "--offline"])
+        payload = _run(["blocks", "--json", "--offline", "--recent"])
     except Unavailable:
         return None
     blocks = payload.get("blocks")
