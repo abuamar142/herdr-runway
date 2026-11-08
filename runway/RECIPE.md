@@ -171,6 +171,11 @@ Two mods, installed together:
 `format.js` is duplicated because a mod cannot import from outside its own
 folder. Keep the two copies byte-identical.
 
+Provider ids, names, logos, helpers, credential hints and ccusage agents live
+in `runway/shared/providers.js`. `scripts/sync-providers.sh` copies it into
+both mod folders because a Herdr mod cannot import outside its own folder; the
+two copies must stay byte-identical.
+
 The bar reads providers with `exec` on `python`/`python3`/`py`, one helper per
 provider account (and one quota-axi call for its four providers):
 

@@ -49,6 +49,7 @@ import {
   usageColor,
   windowLabel,
 } from "./format.js";
+import { PROVIDERS } from "./providers.js";
 
 const TICK_MS = 60000;
 const CCUSAGE_TICK_MS = 15 * 60000;
@@ -65,29 +66,7 @@ const ALERT_STATE_KEY = "runway.alert_state";
 // The order here is the order in the bar. Each helper answers with its own JSON
 // and may also answer with a readable error; both are normalized below. `logo`
 // is the file in this folder drawn in place of the provider name.
-const SOURCES = [
-  { id: "claude", name: "Claude", helper: "collect_claude.py", logo: "claude.svg", keys: true },
-  { id: "opencode-go", name: "OpenCode", helper: "collect.py", logo: "opencode.svg", keys: true },
-  { id: "kenari", name: "Kenari", helper: "collect_kenari.py", logo: "kenari.svg", keys: true },
-  {
-    id: "quota-axi",
-    name: "Quota AXI",
-    helper: "collect_quota_axi.py",
-    multiple: true,
-    providers: [
-      { id: "codex", name: "Codex" },
-      { id: "agy", name: "Antigravity" },
-      { id: "kimi", name: "Kimi" },
-      { id: "commandcode", name: "Command Code" },
-    ],
-    logos: {
-      codex: "codex.svg",
-      agy: "antigravity.svg",
-      kimi: "kimi.svg",
-      commandcode: "commandcode.svg",
-    },
-  },
-];
+const SOURCES = PROVIDERS;
 
 function enabledSet() {
   // One-time carry-over from the mod's old name, so renaming kept the choices.

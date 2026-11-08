@@ -65,6 +65,7 @@ import {
   windowLabel,
   windowSpan,
 } from "./format.js";
+import { PROVIDERS } from "./providers.js";
 
 const TICK_MS = 60000;
 const HISTORY_TICK_MS = 300000;
@@ -74,56 +75,24 @@ const ASSETS = "mods/runway";
 const ENABLED_KEY = "runway.enabled";
 const REFRESH_CHOICES = [5, 10, 15, 30, 60];
 const INTERVAL_CHOICES = [0, 5, 10, 15, 30, 60];
-const HELPERS = {
-  claude: "collect_claude.py",
-  "opencode-go": "collect.py",
-  kenari: "collect_kenari.py",
-};
 const PYTHON_HOSTS = ["python", "python3", "py"];
-const CCUSAGE_AGENTS = {
-  claude: "claude",
-  codex: "codex",
-  "opencode-go": "opencode",
-  kimi: "kimi",
-};
-const LOGOS = {
-  claude: "claude.svg",
-  "opencode-go": "opencode.svg",
-  kenari: "kenari.svg",
-  codex: "codex.svg",
-  agy: "antigravity.svg",
-  kimi: "kimi.svg",
-  commandcode: "commandcode.svg",
-};
-const SHORT_NAMES = {
-  claude: "Claude",
-  "opencode-go": "OpenCode",
-  kenari: "Kenari",
-  codex: "Codex",
-  agy: "Agy",
-  kimi: "Kimi",
-  commandcode: "Cmd",
-};
-const CREDENTIAL_BASES = [
-  {
-    base: "claude",
-    name: "Claude Code",
-    hint: "OAuth token, not an Anthropic API key",
-    placeholder: "Paste Claude Code OAuth token",
-  },
-  {
-    base: "opencode-go",
-    name: "OpenCode Go",
-    hint: "API key (oc_sk_... or sk-...)",
-    placeholder: "Paste OpenCode Go API key",
-  },
-  {
-    base: "kenari",
-    name: "Kenari",
-    hint: "API key",
-    placeholder: "Paste Kenari API key",
-  },
-];
+const LOGOS = {};
+const SHORT_NAMES = {};
+const HELPERS = {};
+const CCUSAGE_AGENTS = {};
+const CREDENTIAL_BASES = [];
+for (const provider of PROVIDERS) {
+  if (provider.logo) LOGOS[provider.id] = provider.logo;
+  for (const [id, file] of Object.entries(provider.logos ?? {})) LOGOS[id] = file;
+  if (provider.short) SHORT_NAMES[provider.id] = provider.short;
+  if (provider.helper) HELPERS[provider.id] = provider.helper;
+  if (provider.ccusageAgent) CCUSAGE_AGENTS[provider.id] = provider.ccusageAgent;
+  if (provider.credential) CREDENTIAL_BASES.push({ base: provider.id, ...provider.credential });
+  for (const child of provider.providers ?? []) {
+    if (child.short) SHORT_NAMES[child.id] = child.short;
+    if (child.ccusageAgent) CCUSAGE_AGENTS[child.id] = child.ccusageAgent;
+  }
+}
 
 function credentialInstances() {
   return CREDENTIAL_BASES.flatMap((base) =>
