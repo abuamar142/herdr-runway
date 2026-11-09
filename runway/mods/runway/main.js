@@ -52,6 +52,7 @@ import {
 } from "./format.js";
 import { PROVIDERS } from "./providers.js";
 import { mergeCcusage, mergeReading } from "./merge.js";
+import { sameReset } from "./alerts.js";
 
 const TICK_MS = 60000;
 const CCUSAGE_TICK_MS = 15 * 60000;
@@ -289,7 +290,7 @@ export default class AgentUsage extends View {
           perProvider[key] && typeof perProvider[key] === "object"
             ? perProvider[key]
             : { reset_at: reset, warn: false, critical: false, forecast: false };
-        if (entry.reset_at && reset && entry.reset_at !== reset) {
+        if (entry.reset_at && reset && !sameReset(entry.reset_at, reset)) {
           entry = { reset_at: reset, warn: false, critical: false, forecast: false };
           if (settings.reset) {
             notify({
