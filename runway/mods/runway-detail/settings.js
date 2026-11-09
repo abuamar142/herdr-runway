@@ -26,7 +26,7 @@ const INTERVAL_CHOICES = [0, 5, 10, 15, 30, 60];
 export function tab(view, provider, selected, bar, t) {
   const active = provider.id === selected;
   const percent = meterPercent(barWindow(provider, bar.window));
-  const suffix = provider.error
+  const suffix = provider.error || provider.stale
     ? "!"
     : percent === null
     ? ""
@@ -61,6 +61,8 @@ export function tab(view, provider, selected, bar, t) {
               .text_color(
                 provider.error
                   ? t.blocked
+                  : provider.stale
+                  ? t.working
                   : active
                   ? usageColor(percent, t)
                   : t.dim,
@@ -78,7 +80,7 @@ function manageRow(view, provider, index, t, settings, enabled) {
   const percent = meterPercent(primaryWindow(provider));
   const reading = !on
     ? ""
-    : provider.error
+    : provider.error || provider.stale
     ? "!"
     : percent === null
     ? ""
@@ -115,7 +117,7 @@ function manageRow(view, provider, index, t, settings, enabled) {
     )
     .child(
       div()
-        .text_color(provider.error ? t.blocked : t.dim)
+        .text_color(provider.error ? t.blocked : provider.stale ? t.working : t.dim)
         .child(reading),
     )
     .child(
@@ -798,6 +800,8 @@ export function barSection(t, bar, usageData) {
           "Token estimates",
           usageData?.error
             ? String(usageData.error)
+            : usageData?.stale
+            ? `Token data is stale: ${usageData.stale_error ?? "update failed"}`
             : "ccusage tokens and API-equivalent cost; all accounts.",
           h_flex()
             .gap(6)

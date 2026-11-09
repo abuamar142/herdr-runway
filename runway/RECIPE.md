@@ -160,8 +160,9 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 Two mods, installed together:
 
 - `mods/runway/` — the status-bar mod. `main.js` owns the snapshot, the
-  schedule, the collectors, and the bar. `format.js` holds the shared
-  formatting, pace math, and settings helpers. `mod.json` is
+  schedule, the collectors, and the bar. `merge.js` keeps the last good
+  reading when an update fails. `format.js` holds the shared formatting,
+  pace math, and settings helpers. `mod.json` is
   `{ "place": "none", "size": 28 }`.
 - `mods/runway-detail/` — the dialog. `main.js` owns state, keyboard handling
   and composition; `cards.js` draws window/history/token cards; `settings.js`

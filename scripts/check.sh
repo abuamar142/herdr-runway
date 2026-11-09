@@ -10,6 +10,7 @@ cmp runway/shared/providers.js runway/mods/runway-detail/providers.js
 python3 -m py_compile runway/mods/runway/*.py
 python3 -m unittest discover -s tests -v
 node --check runway/mods/runway/main.js
+node --check runway/mods/runway/merge.js
 node --check runway/mods/runway/providers.js
 node --check runway/mods/runway-detail/providers.js
 node --check runway/mods/runway-detail/main.js

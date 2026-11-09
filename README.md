@@ -117,6 +117,10 @@ one account, and have no key field.
   Rename or Remove an extra account from its row. The dialog body scrolls when
   the list grows.
 - Refresh: choose 5, 10, 15, 30, 60 minutes, or Manual.
+- If a scheduled update fails, Runway keeps the last successful reading and
+  marks it with `!` instead of clearing the numbers. The dialog shows the
+  failure time, the error, and when the shown reading last succeeded; alerts
+  and History ignore stale points until a fresh read arrives.
 - Alerts: choose warn/critical percentages, forecast and reset toasts, or
   snooze for an hour. **Send test** posts one toast.
 - Bar: choose which window the bar reads (`Primary`, `5h`, `Week`, `Month`,

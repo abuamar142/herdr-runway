@@ -207,6 +207,42 @@ function diagnosticLine(provider, t) {
   return div().text_color(t.dim).text_size(10.5).child(parts.join(" · "));
 }
 
+function staleNotice(provider, t) {
+  const children = [
+    div()
+      .text_color(t.working)
+      .font_semibold()
+      .child(
+        `Update failed${provider.stale_at ? ` at ${clockTime(provider.stale_at)}` : ""}${
+          provider.stale_error ? `: ${provider.stale_error}` : ""
+        }${provider.stale_code ? ` (${provider.stale_code})` : ""}`,
+      ),
+  ];
+  if (provider.stale_action) {
+    children.push(div().text_color(t.muted).text_size(11.5).child(String(provider.stale_action)));
+  }
+  if (provider.stale_failure) {
+    children.push(div().text_color(t.dim).text_size(10.5).child(String(provider.stale_failure)));
+  }
+  if (provider.last_success_at) {
+    children.push(
+      div()
+        .text_color(t.dim)
+        .text_size(10.5)
+        .child(`Showing last successful reading from ${clockTime(provider.last_success_at)}`),
+    );
+  }
+  return v_flex()
+    .w_full()
+    .gap(5)
+    .p(10)
+    .rounded(8)
+    .bg(tint(t.working, 0.1))
+    .border(1)
+    .border_color(tint(t.working, 0.35))
+    .children(children);
+}
+
 function errorCard(provider, t) {
   const children = [
     div().text_color(t.blocked).font_semibold().child(String(provider.error)),
@@ -462,6 +498,20 @@ function ccusageCard(provider, t, data) {
     .when(
       blockLine,
       (el) => el.child(div().text_color(t.dim).text_size(10).child(blockLine)),
+    )
+    .when(
+      data?.stale,
+      (el) =>
+        el.child(
+          div()
+            .text_color(t.working)
+            .text_size(10)
+            .child(
+              `Token update failed${data.stale_at ? ` at ${clockTime(data.stale_at)}` : ""}${
+                data.stale_code ? ` (${data.stale_code})` : ""
+              }; showing the last reading${data.fetched_at ? ` from ${clockTime(data.fetched_at)}` : ""}.`,
+            ),
+        ),
     );
 }
 
@@ -494,6 +544,7 @@ export function section(provider, t, history, range, onRange, usageData) {
         )),
   ];
 
+  if (provider.stale) children.push(staleNotice(provider, t));
   if (provider.error) {
     children.push(errorCard(provider, t));
     const usageView = ccusageCard(provider, t, usageData);

@@ -482,7 +482,11 @@ export default class AgentUsageDetail extends View {
     const settings = refreshSettings();
     const alerts = alertsSettings();
     const usageData = bar.showTokens ? ccusage() : null;
-    const fetched = snapshot()?.fetched_at;
+    const snap = snapshot();
+    const fetched = snap?.fetched_at;
+    const failedCount =
+      list.filter((provider) => provider.stale || provider.error).length +
+      (usageData?.stale ? 1 : 0);
     const busy = isBusy();
     const next = nextRefreshMs(settings, fetched);
 
@@ -526,9 +530,13 @@ export default class AgentUsageDetail extends View {
     const status = busy
       ? "Refreshing…"
       : fetched
-        ? `Updated ${clockTime(fetched)}${
-            settings.manual ? " · manual refresh" : next === null ? "" : ` · next in ${duration(next)}`
-          }`
+        ? [
+            `${failedCount ? "Checked" : "Updated"} ${clockTime(fetched)}`,
+            failedCount ? `${failedCount} update${failedCount === 1 ? "" : "s"} failed` : null,
+            settings.manual ? "manual refresh" : next === null ? null : `next in ${duration(next)}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")
         : "No reading yet";
     const refreshIcon = svg(`${ASSETS}/refresh.svg`).size(12);
 

@@ -31,6 +31,7 @@ import {
   barSettings,
   barWindow,
   baseProvider,
+  clockTime,
   countdown,
   duration,
   historyFile,
@@ -50,6 +51,7 @@ import {
   windowLabel,
 } from "./format.js";
 import { PROVIDERS } from "./providers.js";
+import { mergeCcusage, mergeReading } from "./merge.js";
 
 const TICK_MS = 60000;
 const CCUSAGE_TICK_MS = 15 * 60000;
@@ -144,6 +146,18 @@ function failed(source, error, code, action, detail, extra = {}) {
 // Everything the bar cannot say in 28 pixels, one hover away.
 function hintFor(provider) {
   const head = [provider.name, provider.plan].filter(Boolean).join(" · ");
+  if (provider.stale) {
+    return [
+      head,
+      `Update failed${provider.stale_at ? ` at ${clockTime(provider.stale_at)}` : ""}: ${
+        provider.stale_error ?? "unknown error"
+      }${provider.stale_code ? ` (${provider.stale_code})` : ""}`,
+      provider.stale_action,
+      provider.last_success_at ? `Last successful reading ${clockTime(provider.last_success_at)}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
   if (provider.error) return [head, provider.error, provider.action].filter(Boolean).join("\n");
   const windows = Array.isArray(provider.windows) ? provider.windows : [];
   const lines = windows.map(
@@ -257,6 +271,10 @@ export default class AgentUsage extends View {
     const live = new Set();
     for (const provider of providers()) {
       if (!provider || provider.error) continue;
+      if (provider.stale) {
+        live.add(provider.id);
+        continue;
+      }
       const windows = Array.isArray(provider.windows) ? provider.windows : [];
       if (!windows.length) continue;
       live.add(provider.id);
@@ -364,7 +382,7 @@ export default class AgentUsage extends View {
     }
     const now = Date.now();
     for (const provider of records) {
-      if (!provider || provider.error) continue;
+      if (!provider || provider.error || provider.stale) continue;
       const point = { t: now, w: {} };
       for (const meter of Array.isArray(provider.windows) ? provider.windows : []) {
         const percent = meterPercent(meter);
@@ -438,7 +456,8 @@ export default class AgentUsage extends View {
           failure: String(error?.message ?? error).slice(0, 400),
         };
       }
-      setShared(CCUSAGE_KEY, data);
+      const previous = shared(CCUSAGE_KEY);
+      setShared(CCUSAGE_KEY, mergeCcusage(previous, data, Date.now()));
       this.ccusageBusy = false;
       cx.notify();
     });
@@ -632,12 +651,16 @@ export default class AgentUsage extends View {
             }
           }),
         );
+        const finishedAt = Date.now();
         active.forEach((source, index) => {
           this.lastSourceRefresh.set(source.id, Date.now());
           const result = results[index];
           if (!result) return;
           const records = Array.isArray(result) ? result : [result];
-          for (const record of records) byId.set(record.id, record);
+          for (const record of records) {
+            if (!record || typeof record !== "object") continue;
+            byId.set(record.id, mergeReading(byId.get(record.id), record, finishedAt));
+          }
         });
         // Keep disabled providers in the snapshot so Providers can turn them
         // back on; a provider that has never been read gets a harmless placeholder.
@@ -657,6 +680,13 @@ export default class AgentUsage extends View {
               failure: null,
               source: null,
               http_status: null,
+              stale: false,
+              stale_at: null,
+              stale_error: null,
+              stale_code: null,
+              stale_action: null,
+              stale_failure: null,
+              last_success_at: null,
               base: provider.base ?? null,
               account: provider.account ?? null,
             });
@@ -665,7 +695,14 @@ export default class AgentUsage extends View {
         for (const id of [...byId.keys()]) {
           if (!knownIds.has(id)) byId.delete(id);
         }
-        setShared(SNAPSHOT, { fetched_at: new Date().toISOString(), providers: [...byId.values()] });
+        const finalProviders = [...byId.values()];
+        const counted = finalProviders.filter((provider) => !enabled || enabled.has(provider.id));
+        setShared(SNAPSHOT, {
+          fetched_at: new Date(finishedAt).toISOString(),
+          stale_count: counted.filter((provider) => provider.stale).length,
+          error_count: counted.filter((provider) => provider.error).length,
+          providers: finalProviders,
+        });
         try {
           this.checkAlerts();
         } catch (_) {
@@ -713,6 +750,10 @@ export default class AgentUsage extends View {
     let list = orderedProviders(providers());
     if (enabled) list = list.filter((provider) => enabled.has(provider.id));
     if (ui.hideUnconfigured) list = list.filter((provider) => !isUnconfigured(provider));
+    const ccusageData = shared(CCUSAGE_KEY);
+    const failedCount =
+      list.filter((provider) => provider.stale || provider.error).length +
+      (ui.showTokens && ccusageData?.stale ? 1 : 0);
     if (ui.mode === "critical") {
       const warn = alertsSettings().warn;
       const hot = list.filter(
@@ -724,9 +765,10 @@ export default class AgentUsage extends View {
       list = [worstProvider(list, ui.window)];
     }
     const settings = refreshSettings();
-    const fetched = snapshot()?.fetched_at;
+    const snap = snapshot();
+    const fetched = snap?.fetched_at;
     // A read that is long overdue dims the numbers instead of passing them off as current.
-    const stale =
+    const overdue =
       !settings.manual &&
       fetched &&
       Date.now() - new Date(fetched).getTime() > (settings.minutes * 2 + 1) * 60000;
@@ -743,7 +785,7 @@ export default class AgentUsage extends View {
         .py(2)
         .rounded(5)
         .cursor_pointer()
-        .when(stale, (el) => el.opacity(0.55))
+        .when(overdue, (el) => el.opacity(0.55))
         .hover((s) => s.bg(t.raised))
         .tooltip(hintFor(provider))
         .accessibility_label(String(provider.name ?? provider.id ?? ""))
@@ -759,7 +801,14 @@ export default class AgentUsage extends View {
                 .font_semibold()
                 .child(String(provider.name ?? provider.id ?? "")),
         )
-        .when(provider.error, (el) => el.child(div().text_color(t.blocked).font_semibold().child("!")))
+        .when(provider.error || provider.stale, (el) =>
+          el.child(
+            div()
+              .text_color(provider.error ? t.blocked : t.working)
+              .font_semibold()
+              .child("!"),
+          ),
+        )
         .when(primary, (el) =>
           el
             .child(
@@ -831,6 +880,20 @@ export default class AgentUsage extends View {
           this.busy ? icon.spin(900) : icon,
           "Refresh now",
           (_event, cx) => this.refresh(cx),
+        ),
+      )
+      .when(failedCount > 0, (el) =>
+        el.child(
+          h_flex()
+            .id("runway-update-warning")
+            .px(4)
+            .cursor_pointer()
+            .text_color(t.working)
+            .tooltip(
+              `${failedCount} update${failedCount === 1 ? "" : "s"} failed; showing the last good reading where available.`,
+            )
+            .on_click(() => this.openDetails())
+            .child(div().font_semibold().child("!")),
         ),
       )
       .children(body)
