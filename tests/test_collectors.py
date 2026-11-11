@@ -1,7 +1,9 @@
 import json
 import os
+import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -81,6 +83,123 @@ class CcusageTests(unittest.TestCase):
             block = collect_ccusage.claude_block()
         self.assertEqual(block["tokens"], 7)
         self.assertTrue(block["is_active"])
+
+
+class OmpCredentialTests(unittest.TestCase):
+    def make_db(self, folder, data, disabled=None):
+        path = Path(folder) / "agent.db"
+        connection = sqlite3.connect(path)
+        connection.execute(
+            "create table auth_credentials ("
+            "provider text, credential_type text, data text, disabled_cause text, updated_at integer)"
+        )
+        connection.execute(
+            "insert into auth_credentials values (?, ?, ?, ?, ?)",
+            ("anthropic", "oauth", json.dumps(data), disabled, 1),
+        )
+        connection.commit()
+        connection.close()
+        return path
+
+    def test_valid_credential(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.make_db(
+                folder,
+                {"access": "oauth-token", "expires": int(time.time() * 1000) + 3600000},
+            )
+            credential = collect_claude.read_omp_credential(path)
+        self.assertEqual(credential["token"], "oauth-token")
+        self.assertFalse(credential["expired"])
+
+    def test_expired_credential(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.make_db(
+                folder,
+                {"access": "old", "expires": int(time.time() * 1000) - 1000},
+            )
+            credential = collect_claude.read_omp_credential(path)
+        self.assertTrue(credential["expired"])
+
+    def test_disabled_credential_is_ignored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.make_db(
+                folder,
+                {"access": "old", "expires": int(time.time() * 1000) + 3600000},
+                "oauth refresh failed",
+            )
+            self.assertIsNone(collect_claude.read_omp_credential(path))
+
+    def test_credentials_prefer_omp_over_opencode(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.make_db(
+                folder,
+                {"access": "omp-token", "expires": int(time.time() * 1000) + 3600000},
+            )
+            with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": ""}):
+                token, plan, source = collect_claude.read_credentials(
+                    config_dir=folder, omp_db=path
+                )
+        self.assertEqual(token, "omp-token")
+        self.assertIsNone(plan)
+        self.assertEqual(source, "OMP agent.db")
+
+
+class ClaudeFallbackTests(unittest.TestCase):
+    def test_collect_falls_back_to_omp_after_token_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "claude"
+            config.mkdir()
+            (config / ".credentials.json").write_text(
+                json.dumps(
+                    {
+                        "claudeAiOauth": {
+                            "accessToken": "claude-token",
+                            "expiresAt": int(time.time() * 1000) + 3600000,
+                            "subscriptionType": "pro",
+                        }
+                    }
+                )
+            )
+            omp = Path(folder) / "agent.db"
+            connection = sqlite3.connect(omp)
+            connection.execute(
+                "create table auth_credentials ("
+                "provider text, credential_type text, data text, disabled_cause text, updated_at integer)"
+            )
+            connection.execute(
+                "insert into auth_credentials values (?, ?, ?, ?, ?)",
+                (
+                    "anthropic",
+                    "oauth",
+                    json.dumps(
+                        {"access": "omp-token", "expires": int(time.time() * 1000) + 3600000}
+                    ),
+                    None,
+                    1,
+                ),
+            )
+            connection.commit()
+            connection.close()
+
+            calls = []
+
+            def fetch(token):
+                calls.append(token)
+                if token == "claude-token":
+                    raise collect_claude.Unavailable("rejected", "token_rejected")
+                return {}
+
+            with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": ""}):
+                with mock.patch.object(collect_claude, "read_opencode_oauth_token", return_value=None):
+                    with mock.patch.object(collect_claude, "fetch_usage", side_effect=fetch):
+                        with mock.patch.object(
+                            collect_claude,
+                            "normalize",
+                            return_value={"provider": "claude", "windows": []},
+                        ):
+                            record = collect_claude.collect(config_dir=config, omp_db=omp)
+        self.assertEqual(record["source"], "OMP agent.db")
+        self.assertEqual(calls, ["claude-token", "omp-token"])
 
 
 class QuotaWindowTests(unittest.TestCase):

@@ -59,7 +59,7 @@ herdr-app status
 
 | Provider | Source | Needs |
 |---|---|---|
-| Claude | Runway key, `CLAUDE_CODE_OAUTH_TOKEN`, Claude Code's credential file, or an OAuth `anthropic` entry in OpenCode's `auth.json` | A Claude Code OAuth token; an Anthropic API key is not the same thing |
+| Claude | Runway key, `CLAUDE_CODE_OAUTH_TOKEN`, Claude Code's credential file, OMP's `anthropic` credential in `~/.omp/agent/agent.db`, or an OAuth `anthropic` entry in OpenCode's `auth.json` | A Claude OAuth token; an Anthropic API key is not the same thing |
 | OpenCode Go | Runway key, OpenCode's SQLite login, `~/.local/share/opencode/auth.json`, `~/.omp/agent/models.yml`, or `OPENCODE_GO_API_KEY` | An OpenCode Go API key or an OpenCode login |
 | Kenari | Runway key, `KENARI_API_KEY`, `~/.kenari/credentials.json`, or `~/.omp/agent/models.yml` | A Kenari key |
 | Codex | `quota-axi` | `quota-axi` or `npx`; Codex signed in |
@@ -82,7 +82,8 @@ Herdr's shared state and are never logged.
 - **Claude Code** takes an OAuth token, not an Anthropic API key. Paste the
   token from `claude setup-token` or the `accessToken` in
   `~/.claude/.credentials.json`. An `sk-ant-api...` key is rejected before a
-  network call.
+  network call. If Claude Code's file is stale, Runway can use OMP's enabled
+  `anthropic` OAuth credential from `~/.omp/agent/agent.db` automatically.
 - **OpenCode Go** takes an API key (`oc_sk_...` or `sk-...`). API keys and the
   `auth.json` entry read `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth
   login keeps reading the Console endpoint so its dollar figures stay available.

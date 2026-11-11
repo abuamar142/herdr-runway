@@ -1,8 +1,9 @@
 """Claude usage from a Claude Code session or a pasted OAuth token.
 
 Reads, in order: a token saved in Runway, ``CLAUDE_CODE_OAUTH_TOKEN``, Claude
-Code's own credential file, then an OAuth ``anthropic`` entry in OpenCode's
-``auth.json``. It asks the same usage endpoint Claude Code's ``/usage`` view
+Code's own credential file, OMP's ``anthropic`` OAuth credential, then an OAuth
+``anthropic`` entry in OpenCode's ``auth.json``. It asks the same usage
+endpoint Claude Code's ``/usage`` view
 uses, then reports the plan windows and, when the account reports money instead
 of percentages, the dollars.
 
@@ -11,6 +12,7 @@ Usage:
     python collect_claude.py --json           # normalized JSON (mod contract)
     python collect_claude.py --config <dir>   # override the Claude config dir
     python collect_claude.py --keys-file <path>  # Runway's saved credentials
+    python collect_claude.py --omp-db <path>     # override OMP's agent.db
 
 Exit codes: 0 success, 2 a known/unavailable condition, 1 unexpected failure.
 
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import sys
 import time
 import urllib.error
@@ -365,6 +368,52 @@ def read_opencode_oauth_token() -> str | None:
     return token
 
 
+def default_omp_db_path() -> Path:
+    override = os.environ.get("OMP_AGENT_DIR")
+    root = Path(override).expanduser() if override else Path.home() / ".omp" / "agent"
+    return root / "agent.db"
+
+
+def read_omp_credential(db_path=None):
+    """Read OMP's latest enabled Anthropic OAuth credential, if present."""
+    path = Path(db_path) if db_path else default_omp_db_path()
+    if not path.is_file():
+        return None
+    uri = "file:" + path.as_posix() + "?mode=ro"
+    try:
+        connection = sqlite3.connect(uri, uri=True, timeout=5)
+    except sqlite3.Error:
+        return None
+    try:
+        row = connection.execute(
+            "select data from auth_credentials "
+            "where provider = 'anthropic' and credential_type = 'oauth' "
+            "and (disabled_cause is null or disabled_cause = '') "
+            "order by updated_at desc limit 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+    if not row:
+        return None
+    try:
+        data = json.loads(row[0])
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    token = _text(data.get("access"))
+    if not token:
+        return None
+    expires = _number(data.get("expires"))
+    expired = False
+    if expires:
+        expires_ms = expires if expires >= 1e11 else expires * 1000
+        expired = expires_ms <= time.time() * 1000
+    return {"token": token, "expired": expired, "data": data}
+
+
 def reject_api_key(token: str) -> None:
     if token.startswith("sk-ant-api"):
         raise Unavailable(
@@ -402,10 +451,10 @@ def read_claude_file(config_dir=None):
     return {"token": token, "plan": plan, "oauth": oauth, "expired": expired}
 
 
-def read_credentials(
-    config_dir=None, keys_file=None, only_key=False, key_id=None
-) -> tuple[str, str | None, str]:
-    """Return (access token, plan, source), preferring explicit credentials."""
+def read_credential_candidates(
+    config_dir=None, keys_file=None, only_key=False, key_id=None, omp_db=None
+):
+    """Return (candidates, stale) with candidates as (token, plan, source, explicit)."""
     override = read_runway_key(keys_file, PROVIDER, key_id)
     if override:
         try:
@@ -413,7 +462,7 @@ def read_credentials(
         except Unavailable as error:
             error.source = "saved key"
             raise
-        return override, None, "saved key"
+        return [(override, None, "saved key", True)], None
     if only_key:
         raise Unavailable(
             "No key saved for this account.",
@@ -429,8 +478,9 @@ def read_credentials(
         except Unavailable as error:
             error.source = "CLAUDE_CODE_OAUTH_TOKEN"
             raise
-        return env_token, None, "CLAUDE_CODE_OAUTH_TOKEN"
+        return [(env_token, None, "CLAUDE_CODE_OAUTH_TOKEN", True)], None
 
+    candidates = []
     stale = None
     try:
         claude = read_claude_file(config_dir)
@@ -441,7 +491,7 @@ def read_credentials(
         stale = error
         claude = None
     if claude and not claude["expired"]:
-        return claude["token"], claude["plan"], "Claude Code credentials"
+        candidates.append((claude["token"], claude["plan"], "Claude Code credentials", False))
     if claude and claude["expired"]:
         stale = Unavailable(
             "The Claude Code access token expired; the sign-in is still valid.",
@@ -450,14 +500,42 @@ def read_credentials(
             source="Claude Code credentials",
         )
 
+    omp = read_omp_credential(omp_db)
+    if omp and not omp["expired"]:
+        try:
+            reject_api_key(omp["token"])
+        except Unavailable as error:
+            error.source = "OMP agent.db"
+            raise
+        candidates.append((omp["token"], None, "OMP agent.db", False))
+    if omp and omp["expired"] and stale is None:
+        stale = Unavailable(
+            "The OMP Claude access token expired.",
+            "token_stale",
+            "Open OMP once so it refreshes the Claude credential, then press refresh.",
+            source="OMP agent.db",
+        )
+
     opencode = read_opencode_oauth_token()
     if opencode:
-        return opencode, None, "OpenCode auth.json"
+        candidates.append((opencode, None, "OpenCode auth.json", False))
+    return candidates, stale
 
+
+def read_credentials(
+    config_dir=None, keys_file=None, only_key=False, key_id=None, omp_db=None
+) -> tuple[str, str | None, str]:
+    """Return the first credential, preferring explicit keys."""
+    candidates, stale = read_credential_candidates(
+        config_dir, keys_file, only_key, key_id, omp_db
+    )
+    if candidates:
+        token, plan, source, _explicit = candidates[0]
+        return token, plan, source
     if stale:
         raise stale
     raise Unavailable(
-        "No Claude Code token was found on this machine.",
+        "No Claude token was found on this machine.",
         "not_signed_in",
         "Paste a Claude Code OAuth token in Runway Settings → Credentials, or run `claude auth login`.",
     )
@@ -536,17 +614,34 @@ def fetch_usage(token: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def collect(config_dir=None, keys_file=None, only_key=False, key_id=None) -> dict:
-    token, plan, source = read_credentials(config_dir, keys_file, only_key, key_id)
-    try:
-        data = fetch_usage(token)
-    except Unavailable as error:
-        error.source = error.source or source
-        raise
-    record = normalize(data, plan)
-    record["source"] = source
-    record["http_status"] = 200
-    return record
+def collect(config_dir=None, keys_file=None, only_key=False, key_id=None, omp_db=None) -> dict:
+    candidates, stale = read_credential_candidates(
+        config_dir, keys_file, only_key, key_id, omp_db
+    )
+    if not candidates:
+        if stale:
+            raise stale
+        raise Unavailable(
+            "No Claude token was found on this machine.",
+            "not_signed_in",
+            "Paste a Claude Code OAuth token in Runway Settings → Credentials, or run `claude auth login`.",
+        )
+
+    last = None
+    for token, plan, source, explicit in candidates:
+        try:
+            data = fetch_usage(token)
+        except Unavailable as error:
+            error.source = error.source or source
+            last = error
+            if explicit or error.code not in {"token_rejected", "forbidden", "rate_limited"}:
+                raise
+            continue
+        record = normalize(data, plan)
+        record["source"] = source
+        record["http_status"] = 200
+        return record
+    raise last
 
 
 def main(argv) -> int:
@@ -572,9 +667,14 @@ def main(argv) -> int:
         index = argv.index("--key-id")
         if index + 1 < len(argv):
             key_id = argv[index + 1]
+    omp_db = None
+    if "--omp-db" in argv:
+        index = argv.index("--omp-db")
+        if index + 1 < len(argv):
+            omp_db = argv[index + 1]
 
     try:
-        record = collect(config_dir, keys_file, only_key, key_id)
+        record = collect(config_dir, keys_file, only_key, key_id, omp_db)
     except Unavailable as error:
         if as_json:
             print(

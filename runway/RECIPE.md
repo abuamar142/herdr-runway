@@ -108,8 +108,10 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   refreshes; **Remove** drops the account, its key entry, its enabled id and
   its dialog inputs, then refreshes so the bar prunes it.
 - A saved key overrides every automatic source. With no saved key, Claude
-  reads `CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's credential file, then an
-  OAuth `anthropic` entry in OpenCode's `auth.json`. OpenCode reads its SQLite
+  reads `CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's credential file, then
+  OMP's latest enabled `anthropic` OAuth credential in
+  `~/.omp/agent/agent.db`, then an OAuth `anthropic` entry in OpenCode's
+  `auth.json`. OpenCode reads its SQLite
   OAuth login, then `auth.json`, then OMP's `models.yml`, then
   `OPENCODE_GO_API_KEY`. Kenari reads `KENARI_API_KEY`, then
   `~/.kenari/credentials.json`, then `models.yml`.
@@ -191,7 +193,8 @@ provider account (and one quota-axi call for its four providers):
   `--key-id`, from Runway's key file; a missing or malformed file is not an
   error.
 - `collect_claude.py` — reads a saved token, `CLAUDE_CODE_OAUTH_TOKEN`, Claude
-  Code's `.credentials.json`, or an OAuth `anthropic` entry in OpenCode's
+  Code's `.credentials.json`, OMP's enabled `anthropic` OAuth credential in
+  `~/.omp/agent/agent.db`, or an OAuth `anthropic` entry in OpenCode's
   `auth.json`; calls `https://api.anthropic.com/api/oauth/usage`.
 - `collect.py` — reads a saved key, OpenCode's SQLite `credential` table,
   `~/.local/share/opencode/auth.json`, `~/.omp/agent/models.yml`, or
@@ -343,7 +346,9 @@ a layout; the bar opens it with `openOverlay`.
   points stay in the history file until the seven-day cutoff.
 - Claude's field is an **OAuth token**, not an Anthropic API key. The collector
   rejects `sk-ant-api...` before a request; subscription usage cannot be read
-  with an API key.
+  with an API key. OMP's `agent.db` is opened read-only; a disabled or expired
+  OMP credential is skipped, and an expired one asks the user to open OMP once
+  so OMP refreshes it.
 - OpenCode's `auth.json` can hold an expired key while the SQLite OAuth login
   still works. The collector tries SQLite first, then `auth.json`, so an
   expired saved key does not hide a working login. A saved Runway key is
