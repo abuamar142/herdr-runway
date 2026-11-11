@@ -102,6 +102,9 @@ one account, and have no key field.
 - Each provider shows a **History** card for its primary window: 24h or 7d
   sparkline, burn rate, and the projected end at reset. It builds as Runway
   refreshes.
+- When a read fails, the last good reading stays visible with a stale notice:
+  the failure, last success, and the next retry after a rate limit. A manual
+  Refresh bypasses the backoff once.
 - Claude, Codex, OpenCode and Kimi also show a **Tokens** card when
   [ccusage](https://github.com/ryoppippi/ccusage) is installed: today/7d/30d
   tokens, API-equivalent cost, top models, and Claude's latest 5-hour block.
@@ -116,7 +119,8 @@ one account, and have no key field.
 - Credentials groups Claude Code, OpenCode Go and Kenari. **+ Account** adds a
   second account with its own label and key; extra accounts need a saved key.
   Rename or Remove an extra account from its row. The dialog body scrolls when
-  the list grows.
+  the list grows. A row with an expiring token shows its source and token
+  expiry, such as OMP's `agent.db` token.
 - Refresh: choose 5, 10, 15, 30, 60 minutes, or Manual.
 - If a scheduled update fails, Runway keeps the last successful reading and
   marks it with `!` instead of clearing the numbers. The dialog shows the

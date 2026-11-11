@@ -52,6 +52,7 @@ import {
 } from "./format.js";
 import { PROVIDERS } from "./providers.js";
 import { mergeCcusage, mergeReading } from "./merge.js";
+import { backoffActive, nextBackoff } from "./backoff.js";
 import { sameReset } from "./alerts.js";
 
 const TICK_MS = 60000;
@@ -139,6 +140,8 @@ function failed(source, error, code, action, detail, extra = {}) {
     failure: detail ? String(detail).slice(0, 400) : null,
     source: typeof extra.source === "string" ? extra.source : null,
     http_status: typeof extra.http_status === "number" ? extra.http_status : null,
+    credential_expires_at:
+      typeof extra.credential_expires_at === "string" ? extra.credential_expires_at : null,
     base: extra.base ?? source.base ?? null,
     account: extra.account ?? source.keyId ?? null,
   };
@@ -154,6 +157,7 @@ function hintFor(provider) {
         provider.stale_error ?? "unknown error"
       }${provider.stale_code ? ` (${provider.stale_code})` : ""}`,
       provider.stale_action,
+      provider.stale_retry_at ? `Next try after ${clockTime(provider.stale_retry_at)}` : null,
       provider.last_success_at ? `Last successful reading ${clockTime(provider.last_success_at)}` : null,
     ]
       .filter(Boolean)
@@ -223,11 +227,12 @@ export default class AgentUsage extends View {
     this.busy = false;
     this.host = null;
     this.lastSourceRefresh = new Map();
+    this.backoffs = new Map();
     this.overlayId = null;
     this.ccusageBusy = false;
     this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
-    this.refresh(cx);
+    this.refresh(cx, null, true);
     cx.timer.every(TICK_MS, (cx) => {
       cx.notify();
       this.maybeRefresh(cx);
@@ -237,7 +242,7 @@ export default class AgentUsage extends View {
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
-        if (command === "refresh") this.refresh(cx);
+        if (command === "refresh") this.refresh(cx, null, true);
         if (command === "ccusage") this.refreshCcusage(cx);
         if (command === "notify") cx.notify();
         if (command === "details" || command === "toggle") this.openDetails();
@@ -582,6 +587,8 @@ export default class AgentUsage extends View {
       return failed({ id, name, base, keyId: account }, parsed.error, parsed.code, parsed.action, parsed.failure, {
         source: typeof parsed.source === "string" ? parsed.source : null,
         http_status: typeof parsed.http_status === "number" ? parsed.http_status : null,
+        credential_expires_at:
+          typeof parsed.credential_expires_at === "string" ? parsed.credential_expires_at : null,
         base,
         account,
       });
@@ -607,6 +614,8 @@ export default class AgentUsage extends View {
       failure: null,
       source: typeof parsed.source === "string" ? parsed.source : null,
       http_status: typeof parsed.http_status === "number" ? parsed.http_status : null,
+      credential_expires_at:
+        typeof parsed.credential_expires_at === "string" ? parsed.credential_expires_at : null,
     };
   }
 
@@ -618,13 +627,26 @@ export default class AgentUsage extends View {
     const due = [];
     for (const source of sources()) {
       if (!source.multiple && enabled && !enabled.has(source.id)) continue;
+      if (backoffActive(this.backoffs.get(source.id), now)) continue;
       const last = this.lastSourceRefresh.get(source.id) ?? 0;
       if (now - last >= providerMinutes(source.id) * 60000) due.push(source.id);
     }
     if (due.length) this.refresh(cx, due);
   }
 
-  refresh(cx, onlySourceIds = null) {
+  applyBackoff(source, records, now) {
+    const limited = records.filter((record) => record && record.code === "rate_limited");
+    if (!limited.length) {
+      this.backoffs.delete(source.id);
+      return;
+    }
+    const next = nextBackoff(this.backoffs.get(source.id), now);
+    this.backoffs.set(source.id, next);
+    const retryAt = new Date(next.until).toISOString();
+    for (const record of limited) record.retry_at = retryAt;
+  }
+
+  refresh(cx, onlySourceIds = null, force = false) {
     if (this.busy) return;
     this.busy = true;
     setShared(BUSY_KEY, true);
@@ -634,6 +656,7 @@ export default class AgentUsage extends View {
         const enabled = enabledSet();
         const active = sources().filter((source) => {
           if (!source.multiple && enabled && !enabled.has(source.id)) return false;
+          if (!force && backoffActive(this.backoffs.get(source.id), Date.now())) return false;
           return !onlySourceIds || onlySourceIds.includes(source.id);
         });
         const byId = new Map(providers().map((provider) => [provider.id, provider]));
@@ -656,8 +679,12 @@ export default class AgentUsage extends View {
         active.forEach((source, index) => {
           this.lastSourceRefresh.set(source.id, Date.now());
           const result = results[index];
-          if (!result) return;
+          if (!result) {
+            this.backoffs.delete(source.id);
+            return;
+          }
           const records = Array.isArray(result) ? result : [result];
+          this.applyBackoff(source, records, finishedAt);
           for (const record of records) {
             if (!record || typeof record !== "object") continue;
             byId.set(record.id, mergeReading(byId.get(record.id), record, finishedAt));
@@ -681,12 +708,14 @@ export default class AgentUsage extends View {
               failure: null,
               source: null,
               http_status: null,
+              credential_expires_at: null,
               stale: false,
               stale_at: null,
               stale_error: null,
               stale_code: null,
               stale_action: null,
               stale_failure: null,
+              stale_retry_at: null,
               last_success_at: null,
               base: provider.base ?? null,
               account: provider.account ?? null,
@@ -880,7 +909,7 @@ export default class AgentUsage extends View {
           "runway-refresh",
           this.busy ? icon.spin(900) : icon,
           "Refresh now",
-          (_event, cx) => this.refresh(cx),
+          (_event, cx) => this.refresh(cx, null, true),
         ),
       )
       .when(failedCount > 0, (el) =>

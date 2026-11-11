@@ -36,6 +36,7 @@ function clearStale(record) {
     stale_code: null,
     stale_action: null,
     stale_failure: null,
+    stale_retry_at: null,
   };
 }
 
@@ -58,12 +59,14 @@ export function mergeReading(previous, next, now = Date.now()) {
     action: null,
     failure: null,
     http_status: null,
+    credential_expires_at: next.credential_expires_at ?? previous.credential_expires_at ?? null,
     stale: true,
     stale_at: at,
     stale_error: String(next.error),
     stale_code: next.code ? String(next.code) : null,
     stale_action: next.action ? String(next.action) : null,
     stale_failure: next.failure ? String(next.failure) : null,
+    stale_retry_at: next.retry_at ? String(next.retry_at) : null,
     last_success_at: previous.last_success_at ?? previous.updated ?? null,
   };
 }

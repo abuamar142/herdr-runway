@@ -153,6 +153,14 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   `auth_required` records.
 - A failed read replaces that provider's data with an error record; other
   providers keep their data. The bar shows `!`; the dialog shows the error card.
+  When a previous reading exists, the old numbers stay and the failure moves to
+  a stale notice with last success and next retry.
+- A `rate_limited` source backs off: 15m, then 30m, then 60m, and is skipped by
+  scheduled reads until the deadline. Manual Refresh bypasses it once. A success
+  clears the backoff. The stale record carries `stale_retry_at`.
+- Claude records also carry `credential_expires_at` from the selected source
+  (Claude Code file or OMP `agent.db`). The provider card and credential row
+  show it, so an expiring OMP token is visible before it fails.
 - Windows with no reset time show `No reset time`. Providers with no reading
   show `No reading yet.` A provider that reports dollars but no percentage gets
   its percentage from `used_usd / limit_usd`.
@@ -251,6 +259,7 @@ Shared state:
 - `runway.alerts` — `{ enabled, warn, critical, forecast, reset, snooze_until }`.
 - `runway.bar` — `{ window, mode, hide_unconfigured }`.
 - `runway.order` — provider ids in bar/tab order; absent means snapshot order.
+`backoff.js` holds the 15m/30m/60m cap used by the bar.
 - `runway.ccusage` — `{ fetched_at, agents, error?, code?, failure? }`.
   `agents` is keyed by ccusage agent (`claude`, `codex`, `opencode`, `kimi`,
   ...); each has `today`, `week`, `month` (`tokens`, `cost_usd`), `models[]`,
@@ -332,6 +341,8 @@ a layout; the bar opens it with `openOverlay`.
   it. `chmod` is skipped on Windows, where the profile ACL applies. The Test
   temp file is mode `600` and is deleted in `finally`, even when the helper
   fails.
+- A manual Refresh ignores backoff by design; repeated manual presses during a
+  429 can extend the next delay. The bar's scheduled reads stay skipped.
 - ccusage cost is an API-price estimate, not the subscription bill. `--offline`
   uses cached pricing, so unknown models can show `$0.00`. ccusage knows
   agents, not Runway account instances; multi-account cards say `all accounts`.

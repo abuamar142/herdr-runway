@@ -322,6 +322,14 @@ def default_config_dir() -> Path:
     return Path.home() / ".claude"
 
 
+def _iso_expiry(value) -> str | None:
+    expires = _number(value)
+    if not expires:
+        return None
+    expires_ms = expires if expires >= 1e11 else expires * 1000
+    return datetime.fromtimestamp(expires_ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _refresh_deadline(oauth) -> str | None:
     """The date the sign-in itself expires, from `refreshTokenExpiresAt`.
 
@@ -411,7 +419,7 @@ def read_omp_credential(db_path=None):
     if expires:
         expires_ms = expires if expires >= 1e11 else expires * 1000
         expired = expires_ms <= time.time() * 1000
-    return {"token": token, "expired": expired, "data": data}
+    return {"token": token, "expired": expired, "data": data, "expires_at": _iso_expiry(expires)}
 
 
 def reject_api_key(token: str) -> None:
@@ -448,7 +456,13 @@ def read_claude_file(config_dir=None):
     if expires:
         expires_ms = expires if expires >= 1e11 else expires * 1000
         expired = expires_ms <= time.time() * 1000
-    return {"token": token, "plan": plan, "oauth": oauth, "expired": expired}
+    return {
+        "token": token,
+        "plan": plan,
+        "oauth": oauth,
+        "expired": expired,
+        "expires_at": _iso_expiry(expires),
+    }
 
 
 def read_credential_candidates(
@@ -462,7 +476,7 @@ def read_credential_candidates(
         except Unavailable as error:
             error.source = "saved key"
             raise
-        return [(override, None, "saved key", True)], None
+        return [(override, None, "saved key", True, None)], None
     if only_key:
         raise Unavailable(
             "No key saved for this account.",
@@ -478,7 +492,7 @@ def read_credential_candidates(
         except Unavailable as error:
             error.source = "CLAUDE_CODE_OAUTH_TOKEN"
             raise
-        return [(env_token, None, "CLAUDE_CODE_OAUTH_TOKEN", True)], None
+        return [(env_token, None, "CLAUDE_CODE_OAUTH_TOKEN", True, None)], None
 
     candidates = []
     stale = None
@@ -491,7 +505,7 @@ def read_credential_candidates(
         stale = error
         claude = None
     if claude and not claude["expired"]:
-        candidates.append((claude["token"], claude["plan"], "Claude Code credentials", False))
+        candidates.append((claude["token"], claude["plan"], "Claude Code credentials", False, claude.get("expires_at")))
     if claude and claude["expired"]:
         stale = Unavailable(
             "The Claude Code access token expired; the sign-in is still valid.",
@@ -507,7 +521,7 @@ def read_credential_candidates(
         except Unavailable as error:
             error.source = "OMP agent.db"
             raise
-        candidates.append((omp["token"], None, "OMP agent.db", False))
+        candidates.append((omp["token"], None, "OMP agent.db", False, omp.get("expires_at")))
     if omp and omp["expired"] and stale is None:
         stale = Unavailable(
             "The OMP Claude access token expired.",
@@ -518,7 +532,7 @@ def read_credential_candidates(
 
     opencode = read_opencode_oauth_token()
     if opencode:
-        candidates.append((opencode, None, "OpenCode auth.json", False))
+        candidates.append((opencode, None, "OpenCode auth.json", False, None))
     return candidates, stale
 
 
@@ -530,7 +544,7 @@ def read_credentials(
         config_dir, keys_file, only_key, key_id, omp_db
     )
     if candidates:
-        token, plan, source, _explicit = candidates[0]
+        token, plan, source, _explicit, _expires_at = candidates[0]
         return token, plan, source
     if stale:
         raise stale
@@ -628,11 +642,12 @@ def collect(config_dir=None, keys_file=None, only_key=False, key_id=None, omp_db
         )
 
     last = None
-    for token, plan, source, explicit in candidates:
+    for token, plan, source, explicit, expires_at in candidates:
         try:
             data = fetch_usage(token)
         except Unavailable as error:
             error.source = error.source or source
+            error.credential_expires_at = expires_at
             last = error
             if explicit or error.code not in {"token_rejected", "forbidden", "rate_limited"}:
                 raise
@@ -640,6 +655,7 @@ def collect(config_dir=None, keys_file=None, only_key=False, key_id=None, omp_db
         record = normalize(data, plan)
         record["source"] = source
         record["http_status"] = 200
+        record["credential_expires_at"] = expires_at
         return record
     raise last
 
@@ -687,6 +703,7 @@ def main(argv) -> int:
                         "action": error.action,
                         "source": error.source,
                         "http_status": error.status,
+                        "credential_expires_at": getattr(error, "credential_expires_at", None),
                     },
                     indent=2,
                 )

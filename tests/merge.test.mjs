@@ -47,6 +47,16 @@ test("failure keeps the previous reading and marks it stale", () => {
   assert.equal(merged.last_success_at, old.last_success_at);
 });
 
+test("failure keeps the next retry time", () => {
+  const merged = mergeReading(
+    old,
+    { ...failure, code: "rate_limited", retry_at: "2026-11-09T01:20:00.000Z" },
+    "2026-11-09T01:05:00.000Z",
+  );
+  assert.equal(merged.stale_code, "rate_limited");
+  assert.equal(merged.stale_retry_at, "2026-11-09T01:20:00.000Z");
+});
+
 test("failure without a reading stays an error", () => {
   const merged = mergeReading(
     { id: "claude", windows: [], error: null },

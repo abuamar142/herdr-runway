@@ -110,6 +110,7 @@ class OmpCredentialTests(unittest.TestCase):
             credential = collect_claude.read_omp_credential(path)
         self.assertEqual(credential["token"], "oauth-token")
         self.assertFalse(credential["expired"])
+        self.assertIsNotNone(credential["expires_at"])
 
     def test_expired_credential(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -199,6 +200,7 @@ class ClaudeFallbackTests(unittest.TestCase):
                         ):
                             record = collect_claude.collect(config_dir=config, omp_db=omp)
         self.assertEqual(record["source"], "OMP agent.db")
+        self.assertIsNotNone(record["credential_expires_at"])
         self.assertEqual(calls, ["claude-token", "omp-token"])
 
 

@@ -117,7 +117,9 @@ function manageRow(view, provider, index, t, settings, enabled) {
     )
     .child(
       div()
-        .text_color(provider.error ? t.blocked : provider.stale ? t.working : t.dim)
+        .text_color(
+          provider.error ? t.blocked : provider.stale ? t.working : t.dim,
+        )
         .child(reading),
     )
     .child(
@@ -186,6 +188,9 @@ function credentialRow(view, item, index, t) {
   const live = providers().find((provider) => provider.id === item.id);
   const diagnostic = [
     live?.source ? `via ${live.source}` : "",
+    live?.credential_expires_at
+      ? `token until ${clockTime(live.credential_expires_at)}`
+      : "",
     typeof live?.http_status === "number" ? `HTTP ${live.http_status}` : "",
   ]
     .filter(Boolean)

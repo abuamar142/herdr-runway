@@ -202,6 +202,9 @@ function diagnosticLine(provider, t) {
   if (typeof provider.http_status === "number") {
     parts.push(`HTTP ${provider.http_status}`);
   }
+  if (provider.credential_expires_at) {
+    parts.push(`token until ${stamp(provider.credential_expires_at)}`);
+  }
   if (provider.updated) parts.push(`Checked ${clockTime(provider.updated)}`);
   if (!parts.length) return null;
   return div().text_color(t.dim).text_size(10.5).child(parts.join(" · "));
@@ -213,23 +216,45 @@ function staleNotice(provider, t) {
       .text_color(t.working)
       .font_semibold()
       .child(
-        `Update failed${provider.stale_at ? ` at ${clockTime(provider.stale_at)}` : ""}${
-          provider.stale_error ? `: ${provider.stale_error}` : ""
-        }${provider.stale_code ? ` (${provider.stale_code})` : ""}`,
+        `Update failed${
+          provider.stale_at ? ` at ${clockTime(provider.stale_at)}` : ""
+        }${provider.stale_error ? `: ${provider.stale_error}` : ""}${
+          provider.stale_code ? ` (${provider.stale_code})` : ""
+        }`,
       ),
   ];
   if (provider.stale_action) {
-    children.push(div().text_color(t.muted).text_size(11.5).child(String(provider.stale_action)));
+    children.push(
+      div().text_color(t.muted).text_size(11.5).child(
+        String(provider.stale_action),
+      ),
+    );
+  }
+  if (provider.stale_retry_at) {
+    children.push(
+      div()
+        .text_color(t.dim)
+        .text_size(10.5)
+        .child(`Next try after ${clockTime(provider.stale_retry_at)}`),
+    );
   }
   if (provider.stale_failure) {
-    children.push(div().text_color(t.dim).text_size(10.5).child(String(provider.stale_failure)));
+    children.push(
+      div().text_color(t.dim).text_size(10.5).child(
+        String(provider.stale_failure),
+      ),
+    );
   }
   if (provider.last_success_at) {
     children.push(
       div()
         .text_color(t.dim)
         .text_size(10.5)
-        .child(`Showing last successful reading from ${clockTime(provider.last_success_at)}`),
+        .child(
+          `Showing last successful reading from ${
+            clockTime(provider.last_success_at)
+          }`,
+        ),
     );
   }
   return v_flex()
@@ -507,9 +532,13 @@ function ccusageCard(provider, t, data) {
             .text_color(t.working)
             .text_size(10)
             .child(
-              `Token update failed${data.stale_at ? ` at ${clockTime(data.stale_at)}` : ""}${
+              `Token update failed${
+                data.stale_at ? ` at ${clockTime(data.stale_at)}` : ""
+              }${
                 data.stale_code ? ` (${data.stale_code})` : ""
-              }; showing the last reading${data.fetched_at ? ` from ${clockTime(data.fetched_at)}` : ""}.`,
+              }; showing the last reading${
+                data.fetched_at ? ` from ${clockTime(data.fetched_at)}` : ""
+              }.`,
             ),
         ),
     );
