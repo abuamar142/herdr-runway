@@ -92,7 +92,16 @@ def _command() -> str | None:
     return None
 
 
-def _run(args: list[str]) -> dict:
+def _omp_env() -> dict:
+    """Point ccusage's pi adapter at OMP's sessions when they exist."""
+    # shortcut: one PI_AGENT_DIR, so a real ~/.pi is not read when OMP exists.
+    omp_sessions = Path.home() / ".omp" / "agent" / "sessions"
+    if "PI_AGENT_DIR" not in os.environ and omp_sessions.is_dir():
+        return {"PI_AGENT_DIR": str(Path.home() / ".omp")}
+    return {}
+
+
+def _run(args: list[str], extra_env: dict | None = None) -> dict:
     command = _command()
     if not command:
         raise Unavailable(
@@ -100,13 +109,16 @@ def _run(args: list[str]) -> dict:
             "no_ccusage",
             "Install ccusage, then press Refresh in Runway Settings → Bar.",
         )
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
     try:
         result = subprocess.run(
             [command, *args],
             capture_output=True,
             text=True,
             timeout=TIMEOUT,
-            env=os.environ.copy(),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         raise Unavailable(
@@ -185,7 +197,8 @@ def daily_totals() -> dict:
             "--by-agent",
             "--since",
             since.isoformat(),
-        ]
+        ],
+        _omp_env(),
     )
     rows = payload.get("daily")
     if not isinstance(rows, list):
@@ -225,6 +238,9 @@ def daily_totals() -> dict:
 
     for agent, bucket in agents.items():
         _round_agent(bucket, model_totals.get(agent, {}))
+    for model in agents.get("pi", {}).get("models", []):
+        if model["model"].startswith("[pi] "):
+            model["model"] = model["model"][5:]
     if not agents and rows:
         raise Unavailable(
             "ccusage did not report per-agent totals.",

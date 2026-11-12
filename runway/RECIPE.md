@@ -214,7 +214,9 @@ provider account (and one quota-axi call for its four providers):
   `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth login calls
   `https://opencode.ai/console/api/go/status`.
 - `collect_ccusage.py` — runs `ccusage daily --json --offline --by-agent
-  --since <30d>` and `ccusage blocks --json --offline`, then prints per-agent
+  --since <30d>` with `PI_AGENT_DIR=~/.omp` when `~/.omp/agent/sessions`
+  exists, and `ccusage blocks --json --offline` without that override. OMP keeps
+  pi's session format, so ccusage's `pi` adapter reads it. Then prints per-agent
   totals and Claude's latest block. It is optional; a missing binary is a
   readable error, not a quota failure.
 - `collect_kenari.py` — reads a saved key, `KENARI_API_KEY`,
@@ -266,7 +268,8 @@ Shared state:
 `backoff.js` holds the 15m/30m/60m cap used by the bar.
 - `runway.ccusage` — `{ fetched_at, agents, error?, code?, failure? }`.
   `agents` is keyed by ccusage agent (`claude`, `codex`, `opencode`, `kimi`,
-  ...); each has `today`, `week`, `month` (`tokens`, `cost_usd`), `models[]`,
+  and `pi` for OMP); each has `today`, `week`, `month` (`tokens`, `cost_usd`),
+  `models[]`,
   and Claude may have `block`. Shared state therefore also carries agent and
   model names, not only numbers.
 - `runway.accounts` — extra accounts keyed by base provider:
@@ -347,6 +350,8 @@ a layout; the bar opens it with `openOverlay`.
   fails.
 - A manual Refresh ignores backoff by design; repeated manual presses during a
   429 can extend the next delay. The bar's scheduled reads stay skipped.
+- ccusage's `pi` adapter takes one `PI_AGENT_DIR`. If both `~/.pi` and `~/.omp`
+  exist, Runway points it at OMP and real pi-agent sessions are not read.
 - ccusage cost is an API-price estimate, not the subscription bill. `--offline`
   uses cached pricing, so unknown models can show `$0.00`. ccusage knows
   agents, not Runway account instances; multi-account cards say `all accounts`.

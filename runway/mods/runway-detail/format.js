@@ -40,6 +40,22 @@ export function providers() {
     : [];
 }
 
+// ccusage reports OMP sessions under its `pi` adapter; this tab shows their
+// tokens only, since OMP has no quota window to read.
+export function tokenOnlyProviders() {
+  if (!barSettings().showTokens) return [];
+  const data = ccusage();
+  if (!data || !data.agents || !data.agents.pi) return [];
+  return [{ id: "omp", name: "OMP", base: "omp", tokenOnly: true }];
+}
+
+export function providersWithTokens(list = providers()) {
+  const extra = tokenOnlyProviders().filter(
+    (provider) => !list.some((candidate) => candidate.id === provider.id),
+  );
+  return [...list, ...extra];
+}
+
 export function isBusy() {
   return shared(BUSY_KEY) === true;
 }

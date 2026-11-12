@@ -72,6 +72,26 @@ class CcusageTests(unittest.TestCase):
         self.assertEqual(agents["claude"]["week"]["cost_usd"], 0.5)
         self.assertEqual(agents["claude"]["models"][0]["model"], "m")
 
+    def test_omp_sessions_point_ccusage_at_dot_omp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            (home / ".omp" / "agent" / "sessions").mkdir(parents=True)
+            with mock.patch.object(Path, "home", return_value=home):
+                with mock.patch.dict(os.environ, {}, clear=True):
+                    env = collect_ccusage._omp_env()
+        self.assertEqual(env, {"PI_AGENT_DIR": str(home / ".omp")})
+
+    def test_explicit_pi_agent_dir_wins(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            (home / ".omp" / "agent" / "sessions").mkdir(parents=True)
+            with mock.patch.object(Path, "home", return_value=home):
+                with mock.patch.dict(
+                    os.environ, {"PI_AGENT_DIR": "/custom/pi"}, clear=True
+                ):
+                    env = collect_ccusage._omp_env()
+        self.assertEqual(env, {})
+
     def test_block(self):
         payload = {
             "blocks": [

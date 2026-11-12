@@ -608,7 +608,7 @@ export function section(provider, t, history, range, onRange, usageData) {
         ),
     );
   }
-  if (!cards.length && !provider.period_ends_at) {
+  if (!cards.length && !provider.period_ends_at && !provider.tokenOnly) {
     children.push(div().text_color(t.dim).child("No reading yet."));
   }
   const historyView = historyCard(provider, t, history, range, onRange);
