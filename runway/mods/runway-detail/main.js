@@ -38,6 +38,7 @@ import {
   meterPercent,
   historyFile,
   nextRefreshMs,
+  ompStats,
   orderedProviders,
   percentLabel,
   primaryWindow,
@@ -54,7 +55,7 @@ import {
   snapshot,
   usageColor,
 } from "./format.js";
-import { ASSETS, chip, iconButton, section } from "./cards.js";
+import { ASSETS, chip, iconButton, ompStatsSection, section } from "./cards.js";
 import { alertsSection, barSection, credentialsSection, providersSection, refreshSection, tab } from "./settings.js";
 import { CREDENTIAL_BASES, HELPERS, credentialInstances } from "./metadata.js";
 
@@ -71,10 +72,26 @@ function enabledSet() {
 }
 
 
+function ompStatsProvider() {
+  const data = ompStats();
+  if (!data || !data.ranges || !Object.keys(data.ranges).length) return null;
+  return {
+    id: "omp-stats",
+    name: "OMP Stats",
+    base: "omp-stats",
+    statsOnly: true,
+    windows: [],
+    error: data.error ?? null,
+    stale: data.stale === true,
+  };
+}
+
 function visibleProviders() {
   const enabled = enabledSet();
-  const all = orderedProviders();
-  return enabled ? all.filter((provider) => enabled.has(provider.id)) : all;
+  const stats = ompStatsProvider();
+  const all = orderedProviders(stats ? [...providers(), stats] : providers());
+  if (!enabled) return all;
+  return all.filter((provider) => provider.statsOnly || enabled.has(provider.id));
 }
 
 function pick(list) {
@@ -116,6 +133,7 @@ export default class AgentUsageDetail extends View {
     this.testResult = {};
     this.history = { version: 1, providers: {} };
     this.historyRange = "24h";
+    this.ompRange = "24h";
     this.labelInputs = {};
     this.ensureInputs();
     cx.spawn(async (cx) => {
@@ -132,6 +150,7 @@ export default class AgentUsageDetail extends View {
     this.loadHistory(cx);
     cx.timer.every(HISTORY_TICK_MS, (cx) => this.loadHistory(cx));
     if (barSettings().showTokens) run(`${BAR_MOD}.ccusage`);
+    if (!ompStats()) run(`${BAR_MOD}.ompstats`);
     // The keys below only arrive once the dialog holds the keyboard.
     cx.timer.after(80, () => this.focus.focus());
   }
@@ -482,11 +501,13 @@ export default class AgentUsageDetail extends View {
     const settings = refreshSettings();
     const alerts = alertsSettings();
     const usageData = bar.showTokens ? ccusage() : null;
+    const ompData = ompStats();
     const snap = snapshot();
     const fetched = snap?.fetched_at;
     const failedCount =
       list.filter((provider) => provider.stale || provider.error).length +
-      (usageData?.stale ? 1 : 0);
+      (usageData?.stale ? 1 : 0) +
+      (ompData?.error ? 1 : 0);
     const busy = isBusy();
     const next = nextRefreshMs(settings, fetched);
 
@@ -521,10 +542,26 @@ export default class AgentUsageDetail extends View {
     const body = this.managing
       ? manage
       : current
-        ? section(current, t, this.history, this.historyRange, (value, cx) => {
-            this.historyRange = value;
-            cx.notify();
-          }, usageData)
+        ? current.statsOnly
+          ? ompStatsSection(
+              current,
+              t,
+              ompData,
+              this.ompRange,
+              (value, cx) => {
+                this.ompRange = value;
+                cx.notify();
+              },
+              () => {
+                exec("xdg-open", ["http://127.0.0.1:3847/#/overview"]).catch(
+                  () => {},
+                );
+              },
+            )
+          : section(current, t, this.history, this.historyRange, (value, cx) => {
+              this.historyRange = value;
+              cx.notify();
+            }, usageData)
         : empty;
 
     const status = busy

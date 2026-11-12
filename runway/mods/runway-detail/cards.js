@@ -544,6 +544,280 @@ function ccusageCard(provider, t, data) {
     );
 }
 
+export function ompStatsSection(provider, t, data, range, onRange, onOpen) {
+  const children = [
+    h_flex()
+      .items_center()
+      .gap(8)
+      .child(mark(provider, 18, t.foreground))
+      .child(
+        div()
+          .text_color(t.foreground)
+          .text_size(15)
+          .font_semibold()
+          .child("OMP Stats"),
+      )
+      .child(div().flex_1())
+      .when(data?.fetched_at, (el) =>
+        el.child(
+          div()
+            .text_color(t.dim)
+            .text_size(10)
+            .child(`local · ${clockTime(data.fetched_at)}`),
+        ))
+      .child(chip(t, "runway-omp-open", "Open dashboard", false, onOpen)),
+    h_flex()
+      .gap(4)
+      .children(
+        ["24h", "7d", "30d"].map((value) =>
+          chip(
+            t,
+            `runway-omp-${value}`,
+            value,
+            range === value,
+            (_event, cx) => onRange(value, cx),
+          )
+        ),
+      ),
+  ];
+
+  if (!data || !data.ranges || !Object.keys(data.ranges).length) {
+    children.push(
+      card(t)
+        .child(
+          div()
+            .text_color(t.blocked)
+            .child(data?.error ?? "OMP stats is not available."),
+        )
+        .when(data?.action, (el) =>
+          el.child(div().text_color(t.dim).text_size(11).child(data.action))),
+    );
+    return v_flex().w_full().gap(12).children(children);
+  }
+
+  if (data.error) {
+    children.push(
+      div()
+        .text_color(t.working)
+        .text_size(10.5)
+        .child(
+          `${data.error}${data.action ? ` ${data.action}` : ""}${
+            data.stale && data.fetched_at
+              ? ` Showing the last reading from ${clockTime(data.fetched_at)}.`
+              : ""
+          }`,
+        ),
+    );
+  }
+
+  const current = data.ranges[range];
+  if (!current) {
+    children.push(
+      card(t).child(
+        div().text_color(t.dim).child(`No OMP stats for ${range}.`),
+      ),
+    );
+    return v_flex().w_full().gap(12).children(children);
+  }
+
+  const overview = current.overview;
+  const tokens = overview.input_tokens + overview.output_tokens;
+  const rows = [
+    [
+      "Requests",
+      `${compactTokens(overview.requests)}${
+        overview.failed ? ` · ${compactTokens(overview.failed)} failed` : ""
+      }`,
+    ],
+    [
+      "Tokens",
+      `${compactTokens(tokens)} (${compactTokens(overview.input_tokens)} in / ${
+        compactTokens(overview.output_tokens)
+      } out)`,
+    ],
+    [
+      "Cache",
+      `${Math.round(overview.cache_rate * 100)}% · ${
+        compactTokens(overview.cache_read)
+      } read`,
+    ],
+    ["Cost", `~${money(overview.cost_usd)}`],
+    [
+      "Latency",
+      `TTFT ${duration(overview.avg_ttft_ms)} · ${
+        Math.round(overview.avg_tps)
+      } tok/s`,
+    ],
+  ];
+
+  children.push(
+    card(t)
+      .gap(6)
+      .child(
+        div()
+          .text_color(t.foreground)
+          .font_semibold()
+          .child(`Overview · ${range}`),
+      )
+      .child(
+        v_flex()
+          .w_full()
+          .gap(3)
+          .children(
+            rows.map(([label, value]) =>
+              h_flex()
+                .items_center()
+                .gap(8)
+                .child(div().w(64).text_color(t.dim).text_size(10.5).child(label))
+                .child(div().text_color(t.foreground).text_size(11).child(value))
+                .child(div().flex_1())
+            ),
+          ),
+      ),
+  );
+
+  if (current.models?.length) {
+    children.push(
+      card(t)
+        .gap(6)
+        .child(
+          div()
+            .text_color(t.foreground)
+            .font_semibold()
+            .child("Models · API-equivalent"),
+        )
+        .child(
+          v_flex()
+            .w_full()
+            .gap(3)
+            .children(
+              current.models.map((model) =>
+                h_flex()
+                  .items_center()
+                  .gap(8)
+                  .child(
+                    div()
+                      .flex_1()
+                      .min_w(0)
+                      .text_color(t.foreground)
+                      .text_size(11)
+                      .child(model.model),
+                  )
+                  .child(
+                    div()
+                      .text_color(t.dim)
+                      .text_size(10.5)
+                      .child(
+                        `${compactTokens(model.requests)} req · ${
+                          compactTokens(model.tokens)
+                        } tok`,
+                      ),
+                  )
+                  .child(
+                    div()
+                      .text_color(t.dim)
+                      .text_size(10.5)
+                      .child(`~${money(model.cost_usd)}`),
+                  )
+              ),
+            ),
+        ),
+    );
+  }
+
+  if (current.folders?.length) {
+    children.push(
+      card(t)
+        .gap(6)
+        .child(
+          div().text_color(t.foreground).font_semibold().child("Folders"),
+        )
+        .child(
+          v_flex()
+            .w_full()
+            .gap(3)
+            .children(
+              current.folders.map((folder) =>
+                h_flex()
+                  .items_center()
+                  .gap(8)
+                  .child(
+                    div()
+                      .flex_1()
+                      .min_w(0)
+                      .text_color(t.foreground)
+                      .text_size(10.5)
+                      .child(folder.folder),
+                  )
+                  .child(
+                    div()
+                      .text_color(t.dim)
+                      .text_size(10.5)
+                      .child(
+                        `${compactTokens(folder.requests)} req · ${
+                          compactTokens(folder.tokens)
+                        } tok`,
+                      ),
+                  )
+                  .child(
+                    div()
+                      .text_color(t.dim)
+                      .text_size(10.5)
+                      .child(`~${money(folder.cost_usd)}`),
+                  )
+              ),
+            ),
+        ),
+    );
+  }
+
+  const errors = current.errors;
+  if (errors) {
+    children.push(
+      card(t)
+        .gap(6)
+        .child(div().text_color(t.foreground).font_semibold().child("Errors"))
+        .child(
+          h_flex()
+            .items_center()
+            .gap(8)
+            .child(
+              div()
+                .text_color(errors.failed ? t.working : t.dim)
+                .text_size(11)
+                .child(
+                  `${compactTokens(errors.failed)} failed · ${
+                    (errors.rate * 100).toFixed(1)
+                  }%`,
+                ),
+            )
+            .child(div().flex_1())
+            .child(
+              div()
+                .text_color(t.dim)
+                .text_size(10.5)
+                .child(`recent sample ${compactTokens(errors.recent)}`),
+            ),
+        )
+        .when(errors.models?.length, (el) =>
+          el.child(
+            div()
+              .text_color(t.dim)
+              .text_size(10.5)
+              .child(
+                `Recent top: ${
+                  errors.models
+                    .map((model) => `${model.model} ${model.count}`)
+                    .join(" · ")
+                }`,
+              ),
+          )),
+    );
+  }
+
+  return v_flex().w_full().gap(12).children(children);
+}
+
 export function section(provider, t, history, range, onRange, usageData) {
   const plan = subtitle(provider);
   const children = [
