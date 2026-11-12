@@ -161,6 +161,10 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Claude records also carry `credential_expires_at` from the selected source
   (Claude Code file or OMP `agent.db`). The provider card and credential row
   show it, so an expiring OMP token is visible before it fails.
+- Claude's `limits` array uses `percent` (older buckets use `utilization`).
+  `weekly_scoped` entries name their model in `scope.model.display_name`; each
+  becomes `seven_day_<slug>` with that display name as its label (for example
+  `seven_day_fable`, "Fable"). New scoped names appear automatically.
 - Windows with no reset time show `No reset time`. Providers with no reading
   show `No reading yet.` A provider that reports dollars but no percentage gets
   its percentage from `used_usd / limit_usd`.

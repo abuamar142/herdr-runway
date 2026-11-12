@@ -451,6 +451,9 @@ const SPANS = {
 
 // The nominal length of a window, when the key names one we know.
 export function windowSpan(key) {
+  if (typeof key === "string" && key.startsWith("seven_day_")) {
+    return 7 * 86400000;
+  }
   return SPANS[key] ?? null;
 }
 
@@ -458,7 +461,7 @@ export function windowSpan(key) {
 // percentage; `runout` is how long until 100% at the current rate, only when
 // that lands before the window resets. A month is taken as 30 days.
 export function pace(meter, now = Date.now()) {
-  const span = SPANS[meter?.key];
+  const span = windowSpan(meter?.key);
   const percent = meterPercent(meter);
   if (!span || percent === null || !meter.resets_at) return null;
   const left = new Date(meter.resets_at).getTime() - now;

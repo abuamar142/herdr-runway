@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -163,6 +164,8 @@ def _window(key: str, label: str, bucket) -> dict | None:
     if not isinstance(bucket, dict):
         return None
     percent = _number(bucket.get("utilization"))
+    if percent is None:
+        percent = _number(bucket.get("percent"))
     used = _number(bucket.get("used_dollars"))
     limit = _number(bucket.get("limit_dollars"))
     if percent is None and used is None:
@@ -238,22 +241,56 @@ def _extra_usage(payload) -> dict | None:
     }
 
 
+def _display_name(entry) -> str | None:
+    """The model label on a scoped limit, such as Fable."""
+    scope = entry.get("scope")
+    if not isinstance(scope, dict):
+        return None
+    model = scope.get("model")
+    if isinstance(model, dict):
+        for key in ("display_name", "displayName", "name"):
+            value = _text(model.get(key))
+            if value:
+                return value
+    for key in ("display_name", "displayName", "name"):
+        value = _text(scope.get(key))
+        if value:
+            return value
+    return None
+
+
+def _slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
 def normalize(payload, plan: str | None = None) -> dict:
     """Turn a usage payload into the normalized record the bar consumes."""
     if not isinstance(payload, dict):
         raise Unavailable("The usage response was not an object.", "reader_error")
 
     windows = []
+    seen = set()
     limits = payload.get("limits")
     if isinstance(limits, list) and limits:
         for entry in limits:
             if not isinstance(entry, dict):
                 continue
             kind = _text(entry.get("kind")) or "window"
-            label = LIMIT_LABELS.get(kind) or kind.replace("_", " ")
-            key = LIMIT_KEYS.get(kind, kind)
+            if kind == "weekly_scoped":
+                display = _display_name(entry)
+                slug = _slug(display) if display else ""
+                if not slug:
+                    continue
+                key = f"seven_day_{slug}"
+                label = display
+            else:
+                key = LIMIT_KEYS.get(kind, kind)
+                label = LIMIT_LABELS.get(kind) or kind.replace("_", " ")
+            if key in seen:
+                continue
             window = _window(key, label, entry)
             if window:
+                seen.add(key)
                 windows.append(window)
     if not windows:
         for key, label in BUCKETS:

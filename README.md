@@ -102,6 +102,9 @@ one account, and have no key field.
 - Each provider shows a **History** card for its primary window: 24h or 7d
   sparkline, burn rate, and the projected end at reset. It builds as Runway
   refreshes.
+- Claude shows every usage window the endpoint reports: five-hour, weekly, and
+  scoped weekly buckets such as Fable. A new scoped model name appears as its
+  own card without a code change.
 - When a read fails, the last good reading stays visible with a stale notice:
   the failure, last success, and the next retry after a rate limit. A manual
   Refresh bypasses the backoff once.

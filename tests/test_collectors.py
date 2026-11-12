@@ -145,6 +145,53 @@ class OmpCredentialTests(unittest.TestCase):
         self.assertEqual(source, "OMP agent.db")
 
 
+class ClaudeWindowTests(unittest.TestCase):
+    def test_limits_include_scoped_fable_window(self):
+        payload = {
+            "limits": [
+                {"kind": "session", "percent": 0, "resets_at": "2026-11-12T08:00:00Z"},
+                {"kind": "weekly_all", "percent": 78, "resets_at": "2026-11-16T06:00:00Z"},
+                {
+                    "kind": "weekly_scoped",
+                    "percent": 53,
+                    "resets_at": "2026-11-16T06:00:00Z",
+                    "scope": {"model": {"display_name": "Fable"}},
+                },
+            ]
+        }
+        record = collect_claude.normalize(payload)
+        windows = {window["key"]: window for window in record["windows"]}
+        self.assertEqual(list(windows), ["five_hour", "seven_day", "seven_day_fable"])
+        self.assertEqual(windows["seven_day_fable"]["percent"], 53)
+        self.assertEqual(windows["seven_day_fable"]["label"], "Fable")
+        self.assertEqual(
+            windows["seven_day_fable"]["resets_at"], "2026-11-16T06:00:00Z"
+        )
+
+    def test_unknown_scoped_name_becomes_its_own_window(self):
+        payload = {
+            "limits": [
+                {
+                    "kind": "weekly_scoped",
+                    "percent": 12,
+                    "scope": {"model": {"display_name": "Nova Pro"}},
+                }
+            ]
+        }
+        record = collect_claude.normalize(payload)
+        self.assertEqual(record["windows"][0]["key"], "seven_day_nova_pro")
+        self.assertEqual(record["windows"][0]["label"], "Nova Pro")
+
+    def test_direct_buckets_still_parse(self):
+        record = collect_claude.normalize(
+            {
+                "five_hour": {"utilization": 0, "resets_at": "2026-11-12T08:00:00Z"},
+                "seven_day": {"utilization": 78, "resets_at": "2026-11-16T06:00:00Z"},
+            }
+        )
+        self.assertEqual([window["key"] for window in record["windows"]], ["five_hour", "seven_day"])
+
+
 class ClaudeFallbackTests(unittest.TestCase):
     def test_collect_falls_back_to_omp_after_token_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
