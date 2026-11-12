@@ -112,6 +112,10 @@ one account, and have no key field.
   [ccusage](https://github.com/ryoppippi/ccusage) is installed: today/7d/30d
   tokens, API-equivalent cost, top models, and Claude's latest 5-hour block.
   These are ccusage agent totals for all accounts, not a subscription bill.
+- **OMP Stats** is a separate tab fed by OMP's local dashboard on
+  `127.0.0.1:3847`: 24h/7d/30d overview, top models, top folders, and errors.
+  **Open dashboard** opens the full OMP page. The tab appears only when the
+  local stats API has data; it is not a quota provider.
 - In the dialog: `←`/`→` step providers, `1`–`9` pick one, `R` refreshes,
   `S` opens settings, `Esc` closes.
 - The gear opens settings: **Providers**, **Credentials**, **Refresh**,
