@@ -549,7 +549,7 @@ export function ompStatsSection(provider, t, data, range, onRange, onOpen) {
     h_flex()
       .items_center()
       .gap(8)
-      .child(mark(provider, 18, t.foreground))
+      .child(mark(provider, 20, t.foreground))
       .child(
         div()
           .text_color(t.foreground)

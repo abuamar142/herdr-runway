@@ -47,7 +47,13 @@ export function tab(view, provider, selected, bar, t) {
         .py(8)
         .rounded(6)
         .hover((s) => s.bg(t.raised))
-        .child(mark(provider, 14, active ? t.foreground : t.muted))
+        .child(
+          mark(
+            provider,
+            provider.statsOnly ? 16 : 14,
+            active ? t.foreground : t.muted,
+          ),
+        )
         .when(
           active,
           (el) =>

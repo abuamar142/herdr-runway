@@ -27,6 +27,9 @@ for (const provider of PROVIDERS) {
   }
 }
 
+LOGOS.omp = "omp.svg";
+SHORT_NAMES["omp-stats"] = "OMP";
+
 export function credentialInstances() {
   return CREDENTIAL_BASES.flatMap((base) =>
     accountsFor(base.base, base.name).map((account) => ({

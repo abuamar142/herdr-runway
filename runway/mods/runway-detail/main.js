@@ -78,7 +78,7 @@ function ompStatsProvider() {
   return {
     id: "omp-stats",
     name: "OMP Stats",
-    base: "omp-stats",
+    base: "omp",
     statsOnly: true,
     windows: [],
     error: data.error ?? null,
