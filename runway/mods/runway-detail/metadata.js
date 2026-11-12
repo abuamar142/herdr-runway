@@ -27,8 +27,6 @@ for (const provider of PROVIDERS) {
   }
 }
 
-CCUSAGE_AGENTS.omp = "pi";
-
 export function credentialInstances() {
   return CREDENTIAL_BASES.flatMap((base) =>
     accountsFor(base.base, base.name).map((account) => ({

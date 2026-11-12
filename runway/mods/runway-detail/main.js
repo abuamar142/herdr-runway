@@ -43,7 +43,6 @@ import {
   primaryWindow,
   providerMinutes,
   providers,
-  providersWithTokens,
   refreshSettings,
   selectedProvider,
   setAccounts,
@@ -74,9 +73,8 @@ function enabledSet() {
 
 function visibleProviders() {
   const enabled = enabledSet();
-  const all = orderedProviders(providersWithTokens());
-  if (!enabled) return all;
-  return all.filter((provider) => provider.tokenOnly || enabled.has(provider.id));
+  const all = orderedProviders();
+  return enabled ? all.filter((provider) => enabled.has(provider.id)) : all;
 }
 
 function pick(list) {

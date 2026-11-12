@@ -111,9 +111,7 @@ one account, and have no key field.
 - Claude, Codex, OpenCode and Kimi also show a **Tokens** card when
   [ccusage](https://github.com/ryoppippi/ccusage) is installed: today/7d/30d
   tokens, API-equivalent cost, top models, and Claude's latest 5-hour block.
-  OMP gets a token-only **OMP** tab from ccusage's `pi` adapter; it has no quota
-  window. These are ccusage agent totals for all accounts, not a subscription
-  bill.
+  These are ccusage agent totals for all accounts, not a subscription bill.
 - In the dialog: `←`/`→` step providers, `1`–`9` pick one, `R` refreshes,
   `S` opens settings, `Esc` closes.
 - The gear opens settings: **Providers**, **Credentials**, **Refresh**,
