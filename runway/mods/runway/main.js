@@ -23,6 +23,7 @@ import {
 import {
   BUSY_KEY,
   CCUSAGE_KEY,
+  OMPSTATS_KEY,
   SELECTED_KEY,
   SNAPSHOT,
   accountsFor,
@@ -57,6 +58,7 @@ import { sameReset } from "./alerts.js";
 
 const TICK_MS = 60000;
 const CCUSAGE_TICK_MS = 15 * 60000;
+const OMPSTATS_TICK_MS = 5 * 60000;
 const SOURCE_TIMEOUT_MS = 25000;
 const HOSTS = ["python", "python3", "py"];
 const TITLE = "Runway";
@@ -230,6 +232,7 @@ export default class AgentUsage extends View {
     this.backoffs = new Map();
     this.overlayId = null;
     this.ccusageBusy = false;
+    this.ompStatsBusy = false;
     this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
     this.refresh(cx, null, true);
@@ -239,11 +242,14 @@ export default class AgentUsage extends View {
     });
     cx.timer.after(1200, (cx) => this.refreshCcusage(cx));
     cx.timer.every(CCUSAGE_TICK_MS, (cx) => this.refreshCcusage(cx));
+    cx.timer.after(1500, (cx) => this.refreshOmpStats(cx));
+    cx.timer.every(OMPSTATS_TICK_MS, (cx) => this.refreshOmpStats(cx));
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
         if (command === "refresh") this.refresh(cx, null, true);
         if (command === "ccusage") this.refreshCcusage(cx);
+        if (command === "ompstats") this.refreshOmpStats(cx);
         if (command === "notify") cx.notify();
         if (command === "details" || command === "toggle") this.openDetails();
       }
@@ -465,6 +471,56 @@ export default class AgentUsage extends View {
       const previous = shared(CCUSAGE_KEY);
       setShared(CCUSAGE_KEY, mergeCcusage(previous, data, Date.now()));
       this.ccusageBusy = false;
+      cx.notify();
+    });
+  }
+
+  refreshOmpStats(cx) {
+    if (this.ompStatsBusy) return;
+    this.ompStatsBusy = true;
+    cx.spawn(async (cx) => {
+      let data;
+      try {
+        const result = await this.runHelper({
+          id: "omp-stats",
+          helper: "collect_omp_stats.py",
+        });
+        const text = (result?.stdout ?? "").trim();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch (_) {
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("OMP stats returned no readable JSON.");
+        }
+        data = { fetched_at: new Date().toISOString(), ...parsed };
+      } catch (error) {
+        data = {
+          fetched_at: new Date().toISOString(),
+          ranges: {},
+          error: "OMP stats could not be read.",
+          code: "reader_error",
+          action: "Run `omp stats` and try again.",
+          failure: String(error?.message ?? error).slice(0, 400),
+        };
+      }
+      const previous = shared(OMPSTATS_KEY);
+      const merged =
+        data.error && previous && previous.ranges
+          ? {
+              ...previous,
+              error: data.error,
+              code: data.code,
+              action: data.action,
+              failure: data.failure,
+              stale: true,
+              fetched_at: data.fetched_at,
+            }
+          : { ...data, stale: false };
+      setShared(OMPSTATS_KEY, merged);
+      this.ompStatsBusy = false;
       cx.notify();
     });
   }
