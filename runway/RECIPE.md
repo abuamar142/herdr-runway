@@ -53,6 +53,11 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   a 56-bar sparkline, the point count, and `Burn +x.x%/h · projected N% by
   reset`. With fewer than two points it says `History builds as Runway
   refreshes.`
+- A provider that reports a prepaid balance instead of plan windows (Kelontong
+  AI) gets a `Coin balance` card: the amount in its own unit at 18px, then
+  `Balance` (available/empty), `Access`, and `Access ends <stamp> · <countdown>
+  left`, and one dim line saying the account is prepaid with no usage history.
+  The bar shows the same amount where other providers show a percentage.
 - **OMP Stats** is a stats-only tab, not a quota provider. It reads OMP's local
   dashboard API for `24h`/`7d`/`30d` and shows Overview, Models, Folders, and
   Errors cards. `Open dashboard` launches
@@ -168,6 +173,9 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
 - Windows with no reset time show `No reset time`. Providers with no reading
   show `No reading yet.` A provider that reports dollars but no percentage gets
   its percentage from `used_usd / limit_usd`.
+- A balance provider has no percentage, so it never triggers a pace, forecast
+  or threshold alert, and its History card stays empty. `hasReading()` counts
+  `balance` so a failed refresh keeps the last amount as a stale notice.
 
 ## Built from
 
@@ -221,13 +229,19 @@ provider account (and one quota-axi call for its four providers):
   `~/.kenari/credentials.json`, or the `kenari` block in
   `~/.omp/agent/models.yml`; calls `https://kenari.id/v1` (or
   `KENARI_BASE_URL`).
+- `collect_kelontong.py` — reads a saved key, `KELONTONG_API_KEY`, or the
+  `kelontong` block in `~/.omp/agent/models.yml`; calls
+  `https://api.kelontongai.id/v1/balance` (or `KELONTONG_BASE_URL`) and returns
+  `windows: []` plus `balance: { amount, unit, status, access_status,
+  expires_at, message }`.
 - `collect_quota_axi.py` — runs `quota-axi`, `QUOTA_AXI_BIN`, or a pinned `npx -y quota-axi@0.1.69` with
   `--provider codex,agy,kimi,commandcode --json`, filtered to the enabled
   providers.
 
 Every helper answers `--json` with
-`{ provider|id, name|title, plan, windows[], money, period_ends_at, error,
-code, action, failure, source, http_status }`. `source` names the credential
+`{ provider|id, name|title, plan, windows[], money, balance, period_ends_at,
+error, code, action, failure, source, http_status }`. `balance` is only set by
+a prepaid provider; the bar and the dialog read it when `windows` is empty. `source` names the credential
 route used (`saved key`, `Claude Code credentials`, `OpenCode Console login`,
 `OMP models.yml`, `quota-axi`, and so on); `http_status` is the last HTTP code
 when there was one. The bar normalizes that to
@@ -415,6 +429,9 @@ a layout; the bar opens it with `openOverlay`.
   falls back to the highest when nothing crosses the warn threshold.
 - After two refreshes the History card shows a sparkline and a burn/projection
   line; `7d` switches the range and the point count changes.
+- With a Kelontong AI key, the bar shows the coin balance and the dialog shows
+  the `Coin balance` card with the access expiry; removing the key shows the
+  provider's sign-in error instead of a number.
 - The `↑`/`↓` chips reorder the bar and survive a restart.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.

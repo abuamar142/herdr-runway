@@ -22,6 +22,7 @@ export function hasReading(provider) {
   return (
     windows.length > 0 ||
     provider.money != null ||
+    provider.balance != null ||
     provider.period_ends_at != null ||
     (typeof provider.plan === "string" && provider.plan.length > 0)
   );

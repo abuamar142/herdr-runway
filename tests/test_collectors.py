@@ -13,6 +13,7 @@ MOD = ROOT / "runway" / "mods" / "runway"
 sys.path.insert(0, str(MOD))
 
 import collect_claude  # noqa: E402
+import collect_kelontong  # noqa: E402
 import collect_quota_axi  # noqa: E402
 import runway_keys  # noqa: E402
 
@@ -32,6 +33,86 @@ class KeyFileTests(unittest.TestCase):
             path.write_text("{not json")
             self.assertIsNone(runway_keys.read_key(path, "claude"))
         self.assertIsNone(runway_keys.read_key(None, "claude"))
+
+
+class KelontongTests(unittest.TestCase):
+    def test_normalize_reads_the_coin_balance(self):
+        record = collect_kelontong.normalize(
+            {
+                "object": "balance",
+                "unit": "coin",
+                "available": "12.003236",
+                "balance_status": "available",
+                "message": "Saldo tersedia.",
+                "access_status": "active",
+                "access_expires_at": "2026-12-03T06:38:37.178Z",
+            }
+        )
+        self.assertEqual(record["provider"], "kelontong")
+        self.assertEqual(record["windows"], [])
+        self.assertEqual(record["balance"]["amount"], 12.003236)
+        self.assertEqual(record["balance"]["unit"], "coin")
+        self.assertEqual(record["balance"]["status"], "available")
+        self.assertEqual(record["balance"]["access_status"], "active")
+        self.assertEqual(record["balance"]["expires_at"], "2026-12-03T06:38:37.178Z")
+        self.assertNotIn("period_ends_at", record)
+
+    def test_normalize_keeps_a_zero_balance(self):
+        record = collect_kelontong.normalize({"available": "0", "unit": "coin"})
+        self.assertEqual(record["balance"]["amount"], 0)
+        self.assertIsNone(record["balance"]["status"])
+
+    def test_normalize_rejects_a_missing_balance(self):
+        with self.assertRaises(collect_kelontong.Unavailable) as raised:
+            collect_kelontong.normalize({"object": "balance"})
+        self.assertEqual(raised.exception.code, "no_balance")
+
+    def test_normalize_rejects_a_negative_balance(self):
+        with self.assertRaises(collect_kelontong.Unavailable):
+            collect_kelontong.normalize({"available": "-1"})
+
+    def test_key_comes_from_models_yml(self):
+        with tempfile.TemporaryDirectory() as folder:
+            models = Path(folder) / "models.yml"
+            models.write_text(
+                "providers:\n"
+                "  kelontong:\n"
+                "    baseUrl: https://api.kelontongai.id/v1\n"
+                "    apiKey: \"sk-kelontong-test\"\n"
+                "    api: openai-completions\n"
+                "  kenari:\n"
+                "    apiKey: \"kn-other\"\n"
+            )
+            with mock.patch.dict(
+                os.environ, {"PI_CODING_AGENT_DIR": folder, "KELONTONG_API_KEY": ""}
+            ):
+                key, source = collect_kelontong.read_key()
+        self.assertEqual(key, "sk-kelontong-test")
+        self.assertEqual(source, "OMP models.yml")
+
+    def test_environment_key_wins_over_models_yml(self):
+        with mock.patch.dict(os.environ, {"KELONTONG_API_KEY": "env-key"}):
+            key, source = collect_kelontong.read_key()
+        self.assertEqual(key, "env-key")
+        self.assertEqual(source, "KELONTONG_API_KEY")
+
+    def test_saved_key_wins_over_the_environment(self):
+        with tempfile.TemporaryDirectory() as folder:
+            keys = Path(folder) / "keys.json"
+            keys.write_text(json.dumps({"kelontong": "saved-key"}))
+            with mock.patch.dict(os.environ, {"KELONTONG_API_KEY": "env-key"}):
+                key, source = collect_kelontong.read_key(keys)
+        self.assertEqual(key, "saved-key")
+        self.assertEqual(source, "saved key")
+
+    def test_only_key_refuses_to_fall_back(self):
+        with tempfile.TemporaryDirectory() as folder:
+            keys = Path(folder) / "keys.json"
+            keys.write_text("{}")
+            with mock.patch.dict(os.environ, {"KELONTONG_API_KEY": "env-key"}):
+                with self.assertRaises(collect_kelontong.Unavailable) as raised:
+                    collect_kelontong.read_key(keys, only_key=True)
+        self.assertEqual(raised.exception.code, "missing_key")
 
 
 class OmpCredentialTests(unittest.TestCase):

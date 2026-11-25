@@ -29,6 +29,7 @@ import {
   alertsSettings,
   barColor,
   barSettings,
+  balanceText,
   barWindow,
   baseProvider,
   clockTime,
@@ -165,6 +166,15 @@ function hintFor(provider) {
   }
   if (provider.error) return [head, provider.error, provider.action].filter(Boolean).join("\n");
   const windows = Array.isArray(provider.windows) ? provider.windows : [];
+  if (provider.balance) {
+    const balance = provider.balance;
+    const extra = [
+      balance.status ? `balance ${balance.status}` : null,
+      balance.access_status ? `access ${balance.access_status}` : null,
+      balance.expires_at ? `access ends ${clockTime(balance.expires_at)}` : null,
+    ].filter(Boolean);
+    return [head, balanceText(balance), ...extra].filter(Boolean).join("\n");
+  }
   const lines = windows.map(
     (meter) =>
       `${meter.label ?? "usage"} ${windowLabel(meter)}${
@@ -622,6 +632,7 @@ export default class AgentUsage extends View {
             : null,
       windows: Array.isArray(parsed.windows) ? parsed.windows : [],
       money: parsed.money && typeof parsed.money === "object" ? parsed.money : null,
+      balance: parsed.balance && typeof parsed.balance === "object" ? parsed.balance : null,
       period_ends_at: typeof parsed.period_ends_at === "string" ? parsed.period_ends_at : null,
       updated: typeof parsed.updated === "string" ? parsed.updated : null,
       error: null,
@@ -861,6 +872,21 @@ export default class AgentUsage extends View {
                 .child(windowLabel(primary)),
             )
             .when(percent !== null, (row) => row.child(miniMeter(percent, t))),
+        )
+        .when(!primary && provider.balance, (el) =>
+          el.child(
+            div()
+              .text_size(12)
+              .font_semibold()
+              .text_color(
+                Number(provider.balance.amount) > 0
+                  ? provider.balance.status && provider.balance.status !== "available"
+                    ? t.working
+                    : t.foreground
+                  : t.blocked,
+              )
+              .child(balanceText(provider.balance)),
+          ),
         );
     };
 

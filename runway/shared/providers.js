@@ -43,6 +43,19 @@ export const PROVIDERS = [
     },
   },
   {
+    id: "kelontong",
+    name: "Kelontong AI",
+    short: "Kelontong",
+    helper: "collect_kelontong.py",
+    logo: "kelontong.svg",
+    keys: true,
+    credential: {
+      name: "Kelontong AI",
+      hint: "API key (sk-kelontong-…)",
+      placeholder: "Paste Kelontong AI API key",
+    },
+  },
+  {
     id: "quota-axi",
     name: "Quota AXI",
     helper: "collect_quota_axi.py",

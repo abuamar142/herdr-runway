@@ -349,6 +349,17 @@ export function usageColor(value, t) {
   return t.foreground;
 }
 
+// A prepaid balance in its own unit: "12.0 coin", "0.50 coin".
+export function balanceText(balance) {
+  const amount = Number(balance?.amount);
+  if (!Number.isFinite(amount)) return "n/a";
+  const unit =
+    typeof balance?.unit === "string" && balance.unit.trim() ? balance.unit.trim() : "";
+  const shown =
+    amount >= 1000 ? String(Math.round(amount)) : amount >= 10 ? amount.toFixed(1) : amount.toFixed(2);
+  return unit ? `${shown} ${unit}` : shown;
+}
+
 // Grouped thousands, two decimals: $15,000.00, never $15000.00.
 export function money(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "?";

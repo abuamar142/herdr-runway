@@ -62,6 +62,7 @@ herdr-app status
 | Claude | Runway key, `CLAUDE_CODE_OAUTH_TOKEN`, Claude Code's credential file, OMP's `anthropic` credential in `~/.omp/agent/agent.db`, or an OAuth `anthropic` entry in OpenCode's `auth.json` | A Claude OAuth token; an Anthropic API key is not the same thing |
 | OpenCode Go | Runway key, OpenCode's SQLite login, `~/.local/share/opencode/auth.json`, `~/.omp/agent/models.yml`, or `OPENCODE_GO_API_KEY` | An OpenCode Go API key or an OpenCode login |
 | Kenari | Runway key, `KENARI_API_KEY`, `~/.kenari/credentials.json`, or `~/.omp/agent/models.yml` | A Kenari key |
+| Kelontong AI | Runway key, `KELONTONG_API_KEY`, or `~/.omp/agent/models.yml` | A Kelontong AI key; shows the prepaid coin balance and access expiry, not a plan window |
 | Codex | `quota-axi` | `quota-axi` or `npx`; Codex signed in |
 | Antigravity | `quota-axi` | `quota-axi` or `npx`; Antigravity running/installed |
 | Kimi | `quota-axi` | `quota-axi` or `npx`; Kimi signed in |
@@ -88,6 +89,10 @@ Herdr's shared state and are never logged.
   `auth.json` entry read `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth
   login keeps reading the Console endpoint so its dollar figures stay available.
 - **Kenari** takes an API key.
+- **Kelontong AI** takes an API key (`sk-kelontong-...`). The account is
+  prepaid, so Runway shows the coin balance and when access expires instead of
+  a percentage. Kelontong has no usage history endpoint, so there is no burn
+  rate or History card for it.
 
 The panel's saved key wins over every automatic source. Clear it to fall back
 to the tool's own sign-in. Extra accounts are stored in the same key file under
@@ -161,6 +166,7 @@ Network endpoints:
 - `https://opencode.ai/console/api/go/status`
 - `https://opencode.ai/zen/go/v1/usage`
 - `https://kenari.id/v1` (or `KENARI_BASE_URL`)
+- `https://api.kelontongai.id/v1/balance` (or `KELONTONG_BASE_URL`)
 - `quota-axi` through `npx` at the pinned version when it is not installed globally; set `QUOTA_AXI_BIN` to use a trusted binary
 
 The mod runs Python programs with `exec`. Install it only if you trust the

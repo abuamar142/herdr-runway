@@ -1,6 +1,7 @@
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import {
+  balanceText,
   barColor,
   baseProvider,
   clockTime,
@@ -442,6 +443,70 @@ function compactTokens(value) {
   return String(Math.round(number));
 }
 
+function balanceCard(provider, t) {
+  const balance = provider?.balance;
+  if (!balance || typeof balance !== "object") return null;
+  const amount = Number(balance.amount);
+  if (!Number.isFinite(amount)) return null;
+  const low = amount <= 0;
+  const status = typeof balance.status === "string" && balance.status ? balance.status : null;
+  const access =
+    typeof balance.access_status === "string" && balance.access_status
+      ? balance.access_status
+      : null;
+  const expires = typeof balance.expires_at === "string" ? balance.expires_at : null;
+  const facts = [
+    ["Balance", status ?? (low ? "empty" : "available")],
+    ["Access", access ?? "unknown"],
+    ["Access ends", expires ? `${stamp(expires)} · ${countdown(expires)} left` : "no expiry reported"],
+  ];
+  return card(t)
+    .gap(6)
+    .child(
+      h_flex()
+        .items_center()
+        .gap(8)
+        .child(
+          div()
+            .text_color(t.foreground)
+            .font_semibold()
+            .child("Coin balance"),
+        )
+        .child(div().flex_1())
+        .child(
+          div()
+            .text_size(18)
+            .font_semibold()
+            .text_color(low ? t.blocked : t.foreground)
+            .child(balanceText(balance)),
+        ),
+    )
+    .child(
+      v_flex()
+        .w_full()
+        .gap(3)
+        .children(
+          facts.map(([label, value]) =>
+            h_flex()
+              .items_center()
+              .gap(8)
+              .child(div().w(72).text_color(t.dim).text_size(10.5).child(label))
+              .child(div().flex_1().text_color(t.muted).text_size(11).child(value))
+          ),
+        ),
+    )
+    .when(typeof balance.message === "string" && balance.message, (el) =>
+      el.child(div().text_color(t.dim).text_size(10).child(balance.message)))
+    .child(
+      div()
+        .text_color(t.dim)
+        .text_size(10)
+        .child(
+          "Kelontong AI bills from a prepaid coin balance; it has no usage history API, so Runway reads the balance and access expiry.",
+        ),
+    );
+}
+
 export function ompStatsSection(provider, t, data, range, onRange, onOpen) {
   const children = [
     h_flex()
@@ -766,6 +831,8 @@ export function section(provider, t, history, range, onRange) {
     cards.push(windowCard(moneyMeter(provider.money), t));
   }
   if (cards.length) children.push(v_flex().w_full().gap(8).children(cards));
+  const balanceView = balanceCard(provider, t);
+  if (balanceView) children.push(balanceView);
   if (provider.period_ends_at) {
     children.push(
       div()
@@ -778,7 +845,7 @@ export function section(provider, t, history, range, onRange) {
         ),
     );
   }
-  if (!cards.length && !provider.period_ends_at) {
+  if (!cards.length && !balanceView && !provider.period_ends_at) {
     children.push(div().text_color(t.dim).child("No reading yet."));
   }
   const historyView = historyCard(provider, t, history, range, onRange);
