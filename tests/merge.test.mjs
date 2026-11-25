@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   hasReading,
-  mergeCcusage,
   mergeReading,
 } from "../runway/mods/runway/merge.js";
 
@@ -81,32 +80,4 @@ test("hasReading rejects errors and empty records", () => {
   assert.equal(hasReading(failure), false);
   assert.equal(hasReading({ id: "claude", windows: [] }), false);
   assert.equal(hasReading({ id: "claude", windows: [], plan: "pro" }), true);
-});
-
-test("ccusage failure keeps the old agents", () => {
-  const previous = {
-    fetched_at: "2026-11-09T01:00:00.000Z",
-    agents: { claude: { today: { tokens: 10 } } },
-  };
-  const merged = mergeCcusage(previous, {
-    ...failure,
-    fetched_at: "2026-11-09T01:05:00.000Z",
-  }, "2026-11-09T01:05:00.000Z");
-  assert.equal(merged.stale, true);
-  assert.equal(merged.fetched_at, previous.fetched_at);
-  assert.deepEqual(merged.agents, previous.agents);
-});
-
-test("ccusage success clears stale", () => {
-  const stale = {
-    ...mergeCcusage({ agents: { claude: {} } }, failure, 0),
-    stale: true,
-  };
-  const merged = mergeCcusage(stale, {
-    fetched_at: "2026-11-09T01:05:00.000Z",
-    agents: { codex: {} },
-  }, 0);
-  assert.equal(merged.stale, false);
-  assert.equal(merged.stale_error, null);
-  assert.deepEqual(merged.agents, { codex: {} });
 });

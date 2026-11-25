@@ -22,7 +22,6 @@ import {
 } from "herdr";
 import {
   BUSY_KEY,
-  CCUSAGE_KEY,
   OMPSTATS_KEY,
   SELECTED_KEY,
   SNAPSHOT,
@@ -52,12 +51,11 @@ import {
   windowLabel,
 } from "./format.js";
 import { PROVIDERS } from "./providers.js";
-import { mergeCcusage, mergeReading } from "./merge.js";
+import { mergeReading } from "./merge.js";
 import { backoffActive, nextBackoff } from "./backoff.js";
 import { sameReset } from "./alerts.js";
 
 const TICK_MS = 60000;
-const CCUSAGE_TICK_MS = 15 * 60000;
 const OMPSTATS_TICK_MS = 5 * 60000;
 const SOURCE_TIMEOUT_MS = 25000;
 const HOSTS = ["python", "python3", "py"];
@@ -231,7 +229,6 @@ export default class AgentUsage extends View {
     this.lastSourceRefresh = new Map();
     this.backoffs = new Map();
     this.overlayId = null;
-    this.ccusageBusy = false;
     this.ompStatsBusy = false;
     this.alertState = this.readAlertState();
     // Always paint once on start; the schedule controls the next read.
@@ -240,15 +237,12 @@ export default class AgentUsage extends View {
       cx.notify();
       this.maybeRefresh(cx);
     });
-    cx.timer.after(1200, (cx) => this.refreshCcusage(cx));
-    cx.timer.every(CCUSAGE_TICK_MS, (cx) => this.refreshCcusage(cx));
     cx.timer.after(1500, (cx) => this.refreshOmpStats(cx));
     cx.timer.every(OMPSTATS_TICK_MS, (cx) => this.refreshOmpStats(cx));
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
         if (command === "refresh") this.refresh(cx, null, true);
-        if (command === "ccusage") this.refreshCcusage(cx);
         if (command === "ompstats") this.refreshOmpStats(cx);
         if (command === "notify") cx.notify();
         if (command === "details" || command === "toggle") this.openDetails();
@@ -439,40 +433,6 @@ export default class AgentUsage extends View {
     } catch (_) {
       // A read-only home keeps the live numbers; only the chart is lost.
     }
-  }
-
-  refreshCcusage(cx) {
-    if (this.ccusageBusy || !barSettings().showTokens) return;
-    this.ccusageBusy = true;
-    cx.spawn(async (cx) => {
-      let data;
-      try {
-        const result = await this.runHelper({ id: "ccusage", helper: "collect_ccusage.py" });
-        const text = (result?.stdout ?? "").trim();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch (_) {
-          parsed = null;
-        }
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error("ccusage returned no readable JSON.");
-        }
-        data = { fetched_at: new Date().toISOString(), ...parsed };
-      } catch (error) {
-        data = {
-          fetched_at: new Date().toISOString(),
-          agents: {},
-          error: "ccusage could not be read.",
-          code: "reader_error",
-          failure: String(error?.message ?? error).slice(0, 400),
-        };
-      }
-      const previous = shared(CCUSAGE_KEY);
-      setShared(CCUSAGE_KEY, mergeCcusage(previous, data, Date.now()));
-      this.ccusageBusy = false;
-      cx.notify();
-    });
   }
 
   refreshOmpStats(cx) {
@@ -799,7 +759,6 @@ export default class AgentUsage extends View {
         } catch (_) {
           // A history failure must not keep the bar busy.
         }
-        this.refreshCcusage(cx);
       } catch (_) {
         // Keep the previous snapshot; the finally below still clears busy.
       } finally {
@@ -836,10 +795,7 @@ export default class AgentUsage extends View {
     let list = orderedProviders(providers());
     if (enabled) list = list.filter((provider) => enabled.has(provider.id));
     if (ui.hideUnconfigured) list = list.filter((provider) => !isUnconfigured(provider));
-    const ccusageData = shared(CCUSAGE_KEY);
-    const failedCount =
-      list.filter((provider) => provider.stale || provider.error).length +
-      (ui.showTokens && ccusageData?.stale ? 1 : 0);
+    const failedCount = list.filter((provider) => provider.stale || provider.error).length;
     if (ui.mode === "critical") {
       const warn = alertsSettings().warn;
       const hot = list.filter(

@@ -18,7 +18,6 @@ export function historyFile() {
 export const SNAPSHOT = "runway.snapshot";
 const SETTINGS_KEY = "runway.settings";
 const ALERTS_KEY = "runway.alerts";
-export const CCUSAGE_KEY = "runway.ccusage";
 export const OMPSTATS_KEY = "runway.ompstats";
 export const BUSY_KEY = "runway.busy";
 // The provider the dialog opens on; the bar writes it when a provider is clicked.
@@ -43,11 +42,6 @@ export function providers() {
 
 export function isBusy() {
   return shared(BUSY_KEY) === true;
-}
-
-export function ccusage() {
-  const value = shared(CCUSAGE_KEY);
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
 export function ompStats() {
@@ -168,7 +162,6 @@ export function barSettings() {
     window,
     mode,
     hideUnconfigured: raw.hide_unconfigured === true,
-    showTokens: raw.show_tokens !== false,
   };
 }
 
@@ -183,7 +176,6 @@ export function setBarSettings(patch) {
     window,
     mode,
     hide_unconfigured: next.hideUnconfigured === true,
-    show_tokens: next.showTokens !== false,
   });
 }
 

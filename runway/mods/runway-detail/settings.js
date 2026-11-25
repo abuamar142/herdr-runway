@@ -684,7 +684,7 @@ export function alertsSection(t, alerts) {
   );
 }
 
-export function barSection(t, bar, usageData) {
+export function barSection(t, bar) {
   const windowChoices = [
     ["primary", "Primary"],
     ["five_hour", "5h"],
@@ -799,44 +799,6 @@ export function barSection(t, bar, usageData) {
                 !bar.hideUnconfigured,
                 (_event, cx) => {
                   setBarSettings({ hideUnconfigured: false });
-                  cx.notify();
-                },
-              ),
-            ),
-        ),
-      )
-      .child(
-        row(
-          "tokens",
-          "Token estimates",
-          usageData?.error
-            ? String(usageData.error)
-            : usageData?.stale
-            ? `Token data is stale: ${usageData.stale_error ?? "update failed"}`
-            : "ccusage tokens and API-equivalent cost; all accounts.",
-          h_flex()
-            .gap(6)
-            .child(
-              chip(
-                t,
-                "runway-bar-tokens-on",
-                "On",
-                bar.showTokens,
-                (_event, cx) => {
-                  setBarSettings({ showTokens: true });
-                  run(`${BAR_MOD}.ccusage`);
-                  cx.notify();
-                },
-              ),
-            )
-            .child(
-              chip(
-                t,
-                "runway-bar-tokens-off",
-                "Off",
-                !bar.showTokens,
-                (_event, cx) => {
-                  setBarSettings({ showTokens: false });
                   cx.notify();
                 },
               ),

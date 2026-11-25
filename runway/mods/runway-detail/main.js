@@ -30,7 +30,6 @@ import {
   barSettings,
   barWindow,
   baseProvider,
-  ccusage,
   clockTime,
   duration,
   isBusy,
@@ -149,7 +148,6 @@ export default class AgentUsageDetail extends View {
     cx.timer.every(TICK_MS, (cx) => cx.notify());
     this.loadHistory(cx);
     cx.timer.every(HISTORY_TICK_MS, (cx) => this.loadHistory(cx));
-    if (barSettings().showTokens) run(`${BAR_MOD}.ccusage`);
     if (!ompStats()) run(`${BAR_MOD}.ompstats`);
     // The keys below only arrive once the dialog holds the keyboard.
     cx.timer.after(80, () => this.focus.focus());
@@ -500,13 +498,11 @@ export default class AgentUsageDetail extends View {
     const current = list.find((provider) => provider.id === selected) ?? null;
     const settings = refreshSettings();
     const alerts = alertsSettings();
-    const usageData = bar.showTokens ? ccusage() : null;
     const ompData = ompStats();
     const snap = snapshot();
     const fetched = snap?.fetched_at;
     const failedCount =
       list.filter((provider) => provider.stale || provider.error).length +
-      (usageData?.stale ? 1 : 0) +
       (ompData?.error ? 1 : 0);
     const busy = isBusy();
     const next = nextRefreshMs(settings, fetched);
@@ -520,7 +516,7 @@ export default class AgentUsageDetail extends View {
           : this.settingsTab === "alerts"
             ? alertsSection(t, alerts)
             : this.settingsTab === "bar"
-              ? barSection(t, bar, usageData)
+              ? barSection(t, bar)
               : providersSection(this, t, all, settings, enabled);
 
     const manage = v_flex().w_full().gap(0).child(manageBody);
@@ -561,7 +557,7 @@ export default class AgentUsageDetail extends View {
           : section(current, t, this.history, this.historyRange, (value, cx) => {
               this.historyRange = value;
               cx.notify();
-            }, usageData)
+            })
         : empty;
 
     const status = busy

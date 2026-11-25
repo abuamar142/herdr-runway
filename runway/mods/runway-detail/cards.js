@@ -1,7 +1,6 @@
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import {
-  accountsFor,
   barColor,
   baseProvider,
   clockTime,
@@ -20,7 +19,7 @@ import {
   windowLabel,
   windowSpan,
 } from "./format.js";
-import { CCUSAGE_AGENTS, LOGOS } from "./metadata.js";
+import { LOGOS } from "./metadata.js";
 import { burnRate, currentWindowPoints, projectedEnd } from "./history.js";
 
 export const ASSETS = "mods/runway";
@@ -443,107 +442,6 @@ function compactTokens(value) {
   return String(Math.round(number));
 }
 
-function ccusageCard(provider, t, data) {
-  const base = provider.base ?? baseProvider(provider.id);
-  const agentId = CCUSAGE_AGENTS[base];
-  if (!agentId) return null;
-  const agent = data?.agents?.[agentId];
-  if (!agent) return null;
-  const stats = [
-    ["Today", agent.today],
-    ["7d", agent.week],
-    ["30d", agent.month],
-  ].filter(([, bucket]) => bucket && typeof bucket === "object");
-  if (!stats.length) return null;
-  const multi = accountsFor(base, base).length > 1;
-  const models = (Array.isArray(agent.models) ? agent.models : [])
-    .slice(0, 3)
-    .map((model) => `${model.model} ${compactTokens(model.tokens)}`)
-    .join(" · ");
-  const block = agent.block;
-  const blockLine = block
-    ? `5h block ${compactTokens(block.tokens)} · ~${money(block.cost_usd)} · ${
-      block.is_active ? "active" : "ended"
-    }`
-    : null;
-  return card(t)
-    .gap(6)
-    .child(
-      h_flex()
-        .items_center()
-        .gap(8)
-        .child(
-          div().text_color(t.foreground).font_semibold().child(
-            "Tokens · API-equivalent",
-          ),
-        )
-        .child(div().flex_1())
-        .when(
-          multi,
-          (el) =>
-            el.child(
-              div().text_color(t.dim).text_size(10).child("all accounts"),
-            ),
-        ),
-    )
-    .child(
-      v_flex()
-        .w_full()
-        .gap(3)
-        .children(
-          stats.map(([label, bucket]) =>
-            h_flex()
-              .items_center()
-              .gap(8)
-              .child(div().w(38).text_color(t.dim).text_size(10.5).child(label))
-              .child(
-                div().text_color(t.foreground).text_size(11).child(
-                  `${compactTokens(bucket.tokens)} tokens`,
-                ),
-              )
-              .child(div().flex_1())
-              .child(
-                div().text_color(t.dim).text_size(10.5).child(
-                  `~${money(bucket.cost_usd)}`,
-                ),
-              )
-          ),
-        ),
-    )
-    .when(models, (el) =>
-      el.child(
-        div()
-          .w_full()
-          .truncate()
-          .text_color(t.dim)
-          .text_size(10)
-          .tooltip(models)
-          .child(`Top: ${models}`),
-      ))
-    .when(
-      blockLine,
-      (el) => el.child(div().text_color(t.dim).text_size(10).child(blockLine)),
-    )
-    .when(
-      data?.stale,
-      (el) =>
-        el.child(
-          div()
-            .text_color(t.working)
-            .text_size(10)
-            .child(
-              `Token update failed${
-                data.stale_at ? ` at ${clockTime(data.stale_at)}` : ""
-              }${
-                data.stale_code ? ` (${data.stale_code})` : ""
-              }; showing the last reading${
-                data.fetched_at ? ` from ${clockTime(data.fetched_at)}` : ""
-              }.`,
-            ),
-        ),
-    );
-}
-
 export function ompStatsSection(provider, t, data, range, onRange, onOpen) {
   const children = [
     h_flex()
@@ -818,7 +716,7 @@ export function ompStatsSection(provider, t, data, range, onRange, onOpen) {
   return v_flex().w_full().gap(12).children(children);
 }
 
-export function section(provider, t, history, range, onRange, usageData) {
+export function section(provider, t, history, range, onRange) {
   const plan = subtitle(provider);
   const children = [
     h_flex()
@@ -850,8 +748,6 @@ export function section(provider, t, history, range, onRange, usageData) {
   if (provider.stale) children.push(staleNotice(provider, t));
   if (provider.error) {
     children.push(errorCard(provider, t));
-    const usageView = ccusageCard(provider, t, usageData);
-    if (usageView) children.push(usageView);
     return v_flex().w_full().gap(12).children(children);
   }
 
@@ -887,8 +783,6 @@ export function section(provider, t, history, range, onRange, usageData) {
   }
   const historyView = historyCard(provider, t, history, range, onRange);
   if (historyView) children.push(historyView);
-  const usageView = ccusageCard(provider, t, usageData);
-  if (usageView) children.push(usageView);
   const diagnostic = diagnosticLine(provider, t);
   if (diagnostic) children.push(diagnostic);
   return v_flex().w_full().gap(12).children(children);

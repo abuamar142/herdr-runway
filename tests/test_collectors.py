@@ -5,7 +5,6 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -13,7 +12,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MOD = ROOT / "runway" / "mods" / "runway"
 sys.path.insert(0, str(MOD))
 
-import collect_ccusage  # noqa: E402
 import collect_claude  # noqa: E402
 import collect_quota_axi  # noqa: E402
 import runway_keys  # noqa: E402
@@ -34,55 +32,6 @@ class KeyFileTests(unittest.TestCase):
             path.write_text("{not json")
             self.assertIsNone(runway_keys.read_key(path, "claude"))
         self.assertIsNone(runway_keys.read_key(None, "claude"))
-
-
-class CcusageTests(unittest.TestCase):
-    def test_token_and_cost_fields(self):
-        self.assertEqual(collect_ccusage._tokens({"totalTokens": 42}), 42)
-        self.assertEqual(
-            collect_ccusage._tokens(
-                {"inputTokens": 1, "outputTokens": 2, "cacheReadTokens": 3, "cacheCreationTokens": 4}
-            ),
-            10,
-        )
-        self.assertEqual(collect_ccusage._cost({"totalCost": 0.5}), 0.5)
-        self.assertEqual(collect_ccusage._cost({"costUSD": 0.25}), 0.25)
-        self.assertEqual(collect_ccusage._cost({"modelBreakdowns": [{"cost": 0.1}]}), 0.1)
-
-    def test_daily_aggregation(self):
-        today = date.today().isoformat()
-        payload = {
-            "daily": [
-                {
-                    "period": today,
-                    "agents": [
-                        {
-                            "agent": "claude",
-                            "totalTokens": 100,
-                            "totalCost": 0.5,
-                            "modelBreakdowns": [{"modelName": "m", "inputTokens": 100, "cost": 0.5}],
-                        }
-                    ],
-                }
-            ]
-        }
-        with mock.patch.object(collect_ccusage, "_run", return_value=payload):
-            agents = collect_ccusage.daily_totals()
-        self.assertEqual(agents["claude"]["today"]["tokens"], 100)
-        self.assertEqual(agents["claude"]["week"]["cost_usd"], 0.5)
-        self.assertEqual(agents["claude"]["models"][0]["model"], "m")
-
-    def test_block(self):
-        payload = {
-            "blocks": [
-                {"totalTokens": 7, "costUSD": 0.25, "isActive": True},
-                {"totalTokens": 9, "costUSD": 0.5, "isActive": False},
-            ]
-        }
-        with mock.patch.object(collect_ccusage, "_run", return_value=payload):
-            block = collect_ccusage.claude_block()
-        self.assertEqual(block["tokens"], 7)
-        self.assertTrue(block["is_active"])
 
 
 class OmpCredentialTests(unittest.TestCase):

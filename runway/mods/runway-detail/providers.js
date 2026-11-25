@@ -10,7 +10,6 @@ export const PROVIDERS = [
     helper: "collect_claude.py",
     logo: "claude.svg",
     keys: true,
-    ccusageAgent: "claude",
     credential: {
       name: "Claude Code",
       hint: "OAuth token, not an Anthropic API key",
@@ -24,7 +23,6 @@ export const PROVIDERS = [
     helper: "collect.py",
     logo: "opencode.svg",
     keys: true,
-    ccusageAgent: "opencode",
     credential: {
       name: "OpenCode Go",
       hint: "API key (oc_sk_... or sk-...)",
@@ -50,9 +48,9 @@ export const PROVIDERS = [
     helper: "collect_quota_axi.py",
     multiple: true,
     providers: [
-      { id: "codex", name: "Codex", short: "Codex", ccusageAgent: "codex" },
+      { id: "codex", name: "Codex", short: "Codex" },
       { id: "agy", name: "Antigravity", short: "Agy" },
-      { id: "kimi", name: "Kimi", short: "Kimi", ccusageAgent: "kimi" },
+      { id: "kimi", name: "Kimi", short: "Kimi" },
       { id: "commandcode", name: "Command Code", short: "Cmd" },
     ],
     logos: {

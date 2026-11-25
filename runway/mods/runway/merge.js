@@ -70,21 +70,3 @@ export function mergeReading(previous, next, now = Date.now()) {
     last_success_at: previous.last_success_at ?? previous.updated ?? null,
   };
 }
-
-export function mergeCcusage(previous, next, now = Date.now()) {
-  if (!isRecord(next)) return isRecord(previous) ? previous : null;
-  const at = iso(now);
-  if (!next.error) return clearStale(next);
-  const agents = previous?.agents;
-  const hasData = agents && typeof agents === "object" &&
-    !Array.isArray(agents) && Object.keys(agents).length > 0;
-  if (!hasData) return clearStale(next);
-  return {
-    ...previous,
-    stale: true,
-    stale_at: at,
-    stale_error: String(next.error),
-    stale_code: next.code ? String(next.code) : null,
-    stale_failure: next.failure ? String(next.failure) : null,
-  };
-}

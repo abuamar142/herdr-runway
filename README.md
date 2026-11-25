@@ -108,10 +108,6 @@ one account, and have no key field.
 - When a read fails, the last good reading stays visible with a stale notice:
   the failure, last success, and the next retry after a rate limit. A manual
   Refresh bypasses the backoff once.
-- Claude, Codex, OpenCode and Kimi also show a **Tokens** card when
-  [ccusage](https://github.com/ryoppippi/ccusage) is installed: today/7d/30d
-  tokens, API-equivalent cost, top models, and Claude's latest 5-hour block.
-  These are ccusage agent totals for all accounts, not a subscription bill.
 - **OMP Stats** is a separate tab fed by OMP's local dashboard on
   `127.0.0.1:3847`: 24h/7d/30d overview, top models, top folders, and errors.
   **Open dashboard** opens the full OMP page. The tab appears only when the
@@ -136,8 +132,8 @@ one account, and have no key field.
 - Alerts: choose warn/critical percentages, forecast and reset toasts, or
   snooze for an hour. **Send test** posts one toast.
 - Bar: choose which window the bar reads (`Primary`, `5h`, `Week`, `Month`,
-  `Worst`), whether it shows `All`, `Critical` or `Worst`, whether to hide
-  providers with no credential, and whether to show ccusage token estimates.
+  `Worst`), whether it shows `All`, `Critical` or `Worst`, and whether to hide
+  providers with no credential.
 - Providers: the `↑`/`↓` chips reorder the bar and tabs; the order survives a
   restart. The interval chip cycles Auto/5/10/15/30/60 minutes.
 - Off providers are not read at all. Their last record stays as a placeholder
@@ -157,9 +153,7 @@ written by Runway. **Test** writes the pasted key to a short-lived
 deletes it. Only normalized numbers, provider/agent/model names, and the
 credential source name are written to Herdr's shared state. The history file
 keeps seven days of normalized percentages in
-`~/.config/herdr-app/runway-history.json`; it contains no tokens. ccusage is
-optional and is run with `--offline`; it reads local agent logs and cached
-pricing, not credentials.
+`~/.config/herdr-app/runway-history.json`; it contains no tokens.
 
 Network endpoints:
 

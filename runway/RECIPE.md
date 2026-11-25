@@ -53,10 +53,6 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   a 56-bar sparkline, the point count, and `Burn +x.x%/h · projected N% by
   reset`. With fewer than two points it says `History builds as Runway
   refreshes.`
-- Claude, Codex, OpenCode and Kimi add a `Tokens · API-equivalent` card when
-  ccusage has data: `Today`/`7d`/`30d` token and cost rows, up to three top
-  models, and Claude's latest `5h block` with active/ended. With multiple
-  accounts it says `all accounts`.
 - **OMP Stats** is a stats-only tab, not a quota provider. It reads OMP's local
   dashboard API for `24h`/`7d`/`30d` and shows Overview, Models, Folders, and
   Errors cards. `Open dashboard` launches
@@ -125,11 +121,6 @@ The bar's empty state says `Runway ···`; clicking it opens the dialog.
   OAuth login keeps using the Console endpoint, so its dollar figures stay.
 - Saving a key for a provider that is off writes the key but skips the read;
   the row says `Saved` and the provider stays hidden.
-- ccusage runs separately from the quota read: on start, after every quota
-  refresh, and every 15 minutes. It never sets `runway.busy`, so a slow
-  ccusage cannot hold the bar. Missing ccusage or a failed run is stored as
-  `runway.ccusage.error` and hides the card; the quota numbers stay. Token
-  estimates can be turned off in Bar.
 - OMP stats runs separately every five minutes and on dialog open when no data
   exists. It reads `127.0.0.1:3847` only; a failed read keeps the previous
   ranges and marks them stale. The helper falls back to `omp stats --json` for
@@ -200,11 +191,11 @@ own folder. Keep the two copies byte-identical. `scripts/check.sh` verifies
 both shared copies, runs `py_compile`, `unittest`, `node --check` and
 `node --test`; CI runs it on every push.
 
-Provider ids, names, logos, helpers, credential hints and ccusage agents live
+Provider ids, names, logos, helpers and credential hints live
 in `runway/shared/providers.js`. `scripts/sync-providers.sh` copies it into
 both mod folders because a Herdr mod cannot import outside its own folder; the
 two copies must stay byte-identical. The dialog derives `LOGOS`,
-`SHORT_NAMES`, `HELPERS`, `CREDENTIAL_BASES` and `CCUSAGE_AGENTS` from that
+`SHORT_NAMES`, `HELPERS` and `CREDENTIAL_BASES` from that
 file in `metadata.js`.
 
 The bar reads providers with `exec` on `python`/`python3`/`py`, one helper per
@@ -222,10 +213,6 @@ provider account (and one quota-axi call for its four providers):
   `OPENCODE_GO_API_KEY`. API keys call
   `https://opencode.ai/zen/go/v1/usage`; the SQLite OAuth login calls
   `https://opencode.ai/console/api/go/status`.
-- `collect_ccusage.py` — runs `ccusage daily --json --offline --by-agent
-  --since <30d>` and `ccusage blocks --json --offline`, then prints per-agent
-  totals and Claude's latest block. It is optional; a missing binary is a
-  readable error, not a quota failure.
 - `collect_omp_stats.py` — reads OMP's local dashboard API for
   `overview`, `model-dashboard`, `folders`, and `errors` at 24h/7d/30d. It
   strips session paths and messages from error rows. If the dashboard is down,
@@ -277,11 +264,6 @@ Shared state:
 - `runway.bar` — `{ window, mode, hide_unconfigured }`.
 - `runway.order` — provider ids in bar/tab order; absent means snapshot order.
 `backoff.js` holds the 15m/30m/60m cap used by the bar.
-- `runway.ccusage` — `{ fetched_at, agents, error?, code?, failure? }`.
-  `agents` is keyed by ccusage agent (`claude`, `codex`, `opencode`, `kimi`,
-  ...); each has `today`, `week`, `month` (`tokens`, `cost_usd`), `models[]`,
-  and Claude may have `block`. Shared state therefore also carries agent and
-  model names, not only numbers.
 - `runway.ompstats` — `{ fetched_at, source, ranges, error?, code?, action?,
   failure?, stale? }`. `ranges` is keyed by `24h`/`7d`/`30d`; each has
   `overview`, `models[]`, `folders[]`, and `errors`. It contains aggregate
@@ -367,12 +349,6 @@ a layout; the bar opens it with `openOverlay`.
 - OMP's stats API is internal and unauthenticated. Runway hardcodes
   `127.0.0.1:3847`; do not expose that port through a proxy or tunnel. The
   fallback `omp stats --json` syncs session files and is slower than the API.
-- ccusage cost is an API-price estimate, not the subscription bill. `--offline`
-  uses cached pricing, so unknown models can show `$0.00`. ccusage knows
-  agents, not Runway account instances; multi-account cards say `all accounts`.
-- `ccusage opencode` can be empty even when the OpenCode quota API has data;
-  the card is hidden for that provider. Kenari, Antigravity and Command Code
-  have no ccusage agent.
 - Extra accounts are only for the three key providers. `quota-axi` owns the
   other four sign-ins, so they have no `+ Account`; adding a fake account
   would only duplicate one result.
@@ -439,9 +415,6 @@ a layout; the bar opens it with `openOverlay`.
   falls back to the highest when nothing crosses the warn threshold.
 - After two refreshes the History card shows a sparkline and a burn/projection
   line; `7d` switches the range and the point count changes.
-- With ccusage installed, Claude/Codex shows a Tokens card with Today/7d/30d,
-  top models, and Claude's 5h block. Token estimates Off hides it and stops
-  the scheduled ccusage read.
 - The `↑`/`↓` chips reorder the bar and survive a restart.
 - A provider with a bad credential shows `!` in the bar and an error card in
   the dialog, while the other providers still show their numbers.
